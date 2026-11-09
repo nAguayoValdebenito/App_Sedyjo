@@ -1,0 +1,35 @@
+MAQUETA DE LA APP - COMERCIAL SEDYJO
+====================================
+
+Como mostrarla (Windows, sin instalar nada y sin internet)
+-----------------------------------------------------------
+1. Descomprime la carpeta completa en el computador (no ejecutes desde dentro del ZIP).
+2. Haz doble clic en  "Abrir-Maqueta.bat".
+   Se abre el navegador con el celular en pantalla. Deja abierta la ventana negra mientras muestras.
+3. Para terminar, cierra la ventana negra.
+
+Dos formas de abrirla
+---------------------
+- Abrir-Maqueta.bat             -> solo el celular. Ideal para el cliente o un proyector.
+- Abrir-Maqueta-con-panel.bat   -> con el panel de la izquierda para saltar entre pantallas
+                                   (carga, inicio, ficha, pago, cuenta, estados...),
+                                   cambiar el modo oscuro y probar la letra grande.
+
+Consejos para la presentacion
+-----------------------------
+- Usa Chrome o Edge y pulsa F11 para pantalla completa.
+- La pantalla de carga se ve mejor con el panel: "Pantalla de carga (lenta, 16 s)".
+- "Primera vez en la app" y "Sesion iniciada" (panel) cambian los saludos de la bienvenida.
+- Modo oscuro: en Cuenta > Apariencia, o en el panel.
+- Todo es una maqueta: los datos, el carrito, el pago y los pedidos son de ejemplo.
+
+Si algo no abre
+---------------
+- Si Windows pregunta por el firewall, elige "Cancelar": la maqueta solo usa este mismo computador.
+- Si dice que el puerto esta ocupado, cierra otras ventanas de la maqueta y vuelve a abrir.
+- Si el navegador no se abre solo, escribe en la barra de direcciones:  http://localhost:8099/?cliente=1
+
+Mostrarla en el celular del cliente (opcional)
+----------------------------------------------
+Esta maqueta esta pensada para el computador. Para verla en un celular real hay que publicarla
+en internet o generar la aplicacion de Android; pidele ayuda al equipo de desarrollo.
