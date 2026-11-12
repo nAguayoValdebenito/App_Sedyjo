@@ -1,21 +1,29 @@
+import 'package:animations/animations.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../pantallas/carrito.dart' show CarritoPestana;
+import '../pantallas/producto.dart';
+import 'boton_favorito.dart';
+import 'movimiento.dart';
+import 'revelar.dart';
+import 'vuelo_carrito.dart';
 
-/// Duración respetando "reducir movimiento".
-Duration dur(BuildContext c, [int ms = 220]) =>
-    (MediaQuery.maybeDisableAnimationsOf(c) ?? false) || estado.reducirMovimiento
-        ? Duration.zero
-        : Duration(milliseconds: ms);
+// `dur`, `sinMovimiento`, la vibración y las animaciones de apoyo viven en movimiento.dart;
+// se reexportan aquí para que las pantallas sigan importando solo este archivo.
+export 'movimiento.dart';
+export 'revelar.dart';
+export 'vuelo_carrito.dart';
 
-bool sinMovimiento(BuildContext c) =>
-    (MediaQuery.maybeDisableAnimationsOf(c) ?? false) || estado.reducirMovimiento;
+part 'componentes_producto.dart';
+part 'componentes_formularios.dart';
 
-/// Cualquier cosa tocable: se hunde un poco al presionar y expone semántica de botón.
+/// Cualquier cosa tocable: ondulación de Material encima del contenido, se hunde un poco al presionar,
+/// se puede enfocar con teclado o control (anillo azul) y expone semántica de botón.
 class Tocable extends StatefulWidget {
-  const Tocable({super.key, required this.child, this.onTap, this.etiqueta, this.radio = 16});
+  const Tocable({super.key, required this.child, this.onTap, this.etiqueta, this.radio = R.m});
   final Widget child;
   final VoidCallback? onTap;
   final String? etiqueta;
@@ -27,9 +35,11 @@ class Tocable extends StatefulWidget {
 
 class _TocableState extends State<Tocable> {
   bool _abajo = false;
+  bool _foco = false;
 
   @override
   Widget build(BuildContext context) {
+    final forma = BorderRadius.circular(widget.radio);
     return Semantics(
       button: true,
       label: widget.etiqueta,
@@ -37,18 +47,35 @@ class _TocableState extends State<Tocable> {
       onTap: widget.onTap,
       // Con etiqueta explícita, el lector no repite el texto interno ("Agregar, Agregar").
       excludeSemantics: widget.etiqueta != null,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTapDown: (_) => setState(() => _abajo = true),
-        onTapCancel: () => setState(() => _abajo = false),
-        onTapUp: (_) => setState(() => _abajo = false),
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          scale: _abajo && !sinMovimiento(context) ? .97 : 1,
-          duration: const Duration(milliseconds: 110),
-          curve: Curves.easeOut,
-          child: widget.child,
-        ),
+      child: AnimatedScale(
+        scale: _abajo && !sinMovimiento(context) ? .97 : 1,
+        duration: Mov.toque,
+        curve: Mov.entra,
+        child: Stack(fit: StackFit.passthrough, children: [
+          widget.child,
+          Positioned.fill(
+            child: Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                borderRadius: forma,
+                onTap: widget.onTap,
+                excludeFromSemantics: true,
+                onHighlightChanged: (v) => setState(() => _abajo = v),
+                onFocusChange: (v) => setState(() => _foco = v),
+                splashColor: C.verde.withValues(alpha: .14),
+                highlightColor: Colors.transparent,
+                hoverColor: C.verde.withValues(alpha: .06),
+                focusColor: C.azulEnlace.withValues(alpha: .10),
+              ),
+            ),
+          ),
+          if (_foco)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(decoration: BoxDecoration(borderRadius: forma, border: Border.all(color: C.azulEnlace, width: 3))),
+              ),
+            ),
+        ]),
       ),
     );
   }
@@ -66,7 +93,8 @@ class Boton extends StatelessWidget {
       this.alto = 58,
       this.expandido = true,
       this.iconoDerecha = false,
-      this.etiqueta});
+      this.etiqueta,
+      this.alTocarEn});
   final String texto;
   final VoidCallback? onTap;
   final IconData? icono;
@@ -75,6 +103,9 @@ class Boton extends StatelessWidget {
   final bool expandido;
   final bool iconoDerecha;
   final String? etiqueta;
+
+  /// Alternativa a [onTap] cuando la acción necesita el contexto del propio botón (por ejemplo, para que una burbuja salga de él).
+  final void Function(BuildContext contexto)? alTocarEn;
 
   @override
   Widget build(BuildContext context) {
@@ -87,27 +118,28 @@ class Boton extends StatelessWidget {
       EstiloBoton.texto => (Colors.transparent, C.error, Colors.transparent),
     };
     final contenido = <Widget>[
-      if (icono != null && !iconoDerecha) ...[Icon(icono, size: 22, color: color), const SizedBox(width: 10)],
+      if (icono != null && !iconoDerecha) ...[Icon(icono, size: Ico.m, color: color), const SizedBox(width: Esp.x3)],
       // Una sola palabra se achica para caber (nunca se parte a la mitad); una frase se reparte en líneas.
       Flexible(
         child: texto.contains(' ')
             ? Text(texto, textAlign: TextAlign.center, style: T.boton.copyWith(color: color, fontSize: 18))
             : FittedBox(fit: BoxFit.scaleDown, child: Text(texto, maxLines: 1, style: T.boton.copyWith(color: color, fontSize: 18))),
       ),
-      if (icono != null && iconoDerecha) ...[const SizedBox(width: 10), Icon(icono, size: 22, color: color)],
+      if (icono != null && iconoDerecha) ...[const SizedBox(width: Esp.x3), Icon(icono, size: Ico.m, color: color)],
     ];
+    final activo = onTap != null || alTocarEn != null;
     return Tocable(
       etiqueta: etiqueta ?? texto,
-      onTap: onTap,
+      onTap: !activo ? null : () => alTocarEn != null ? alTocarEn!(context) : onTap!(),
       child: Opacity(
-        opacity: onTap == null ? .5 : 1,
+        opacity: !activo ? .5 : 1,
         child: Container(
           constraints: BoxConstraints(minHeight: alto),
           width: expandido ? double.infinity : null,
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: Esp.x3),
           decoration: BoxDecoration(
             color: fondo,
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(R.m),
             border: Border.all(color: borde, width: 2),
           ),
           child: Row(mainAxisSize: expandido ? MainAxisSize.max : MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: contenido),
@@ -153,15 +185,15 @@ class BarraSuperior extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.fromLTRB(Esp.x4, Esp.x2, Esp.x4, Esp.x2),
       child: Row(
         children: [
           if (atras) ...[
             BotonIcono(LucideIcons.arrowLeft, 'Volver', onTap: () => Navigator.of(context).maybePop()),
-            const SizedBox(width: 12),
+            const SizedBox(width: Esp.x3),
           ],
-          Expanded(child: Semantics(header: true, child: Text(titulo, style: T.titulo2.copyWith(fontSize: 24), maxLines: 2))),
-          if (accion != null) accion!,
+          Expanded(child: Semantics(header: true, child: Text(titulo, style: T.titulo2, maxLines: 2))),
+          ?accion,
         ],
       ),
     );
@@ -178,8 +210,8 @@ class Insignia extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(color: fondo, borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: 5),
+      decoration: BoxDecoration(color: fondo, borderRadius: BorderRadius.circular(R.s)),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         if (icono != null) ...[Icon(icono, size: 15, color: color), const SizedBox(width: 5)],
         Text(texto, style: T.etiqueta.copyWith(color: color, fontSize: 14, fontWeight: FontWeight.w800)),
@@ -190,30 +222,38 @@ class Insignia extends StatelessWidget {
 
 /// Selector de cantidad con botones de 52 dp.
 class Cantidad extends StatelessWidget {
-  const Cantidad({super.key, required this.valor, required this.cambia, this.tam = 52, this.minimo = 0, this.producto});
+  const Cantidad({super.key, required this.valor, required this.cambia, this.tam = 52, this.minimo = 0, this.producto, this.vuela = false, this.oscuro = false});
   final int valor;
   final String? producto;
   final ValueChanged<int> cambia;
   final double tam;
   final int minimo;
 
+  /// Si el "+" agrega al carrito de verdad, una burbuja sale de él hacia el carrito (no en el selector de la ficha, que aún no agrega).
+  final bool vuela;
+  final bool oscuro;
+
   @override
   Widget build(BuildContext context) {
-    Widget boton(IconData i, String et, VoidCallback f, {bool activo = true}) => Tocable(
+    // Jerarquía: solo el "+" es verde sólido (es la acción que se repite); el "−" es de contorno.
+    // Deshabilitado se ve gris con contorno suave: se entiende que no se puede, pero se lee.
+    Widget boton(IconData i, String et, void Function(BuildContext) f, {bool activo = true, bool principal = false}) => Builder(
+        builder: (ctx) => Tocable(
           etiqueta: activo ? et : '$et, no disponible',
-          onTap: activo ? f : null,
-          child: Opacity(
-            opacity: activo ? 1 : .35,
-            child: Container(
+          onTap: activo ? () => f(ctx) : null,
+          child: Container(
             width: tam,
             height: tam,
-            decoration: BoxDecoration(color: C.verde, borderRadius: BorderRadius.circular(14)),
-            child: Icon(i, color: Colors.white, size: 24),
+            decoration: BoxDecoration(
+              color: principal && activo ? C.verde : Colors.transparent,
+              borderRadius: BorderRadius.circular(R.s),
+              border: Border.all(color: principal && activo ? C.verde : (activo ? C.bordeControl : C.borde), width: 1.5),
+            ),
+            child: Icon(i, size: Ico.m, color: principal && activo ? Colors.white : (activo ? C.tinta : C.grisTexto.withValues(alpha: .7))),
           ),
-          ),
-        );
+        ));
     return Row(mainAxisSize: MainAxisSize.min, children: [
-      boton(LucideIcons.minus, 'Quitar una unidad${producto == null ? '' : ' de $producto'}', () => cambia((valor - 1).clamp(minimo, 99)), activo: valor > minimo),
+      boton(LucideIcons.minus, 'Quitar una unidad${producto == null ? '' : ' de $producto'}', (_) => cambia((valor - 1).clamp(minimo, 99)), activo: valor > minimo),
       SizedBox(
         width: tam * 1.0,
         child: Semantics(
@@ -224,7 +264,11 @@ class Cantidad extends StatelessWidget {
           ),
         ),
       ),
-      boton(LucideIcons.plus, 'Agregar una unidad${producto == null ? '' : ' de $producto'}', () => cambia((valor + 1).clamp(minimo, 99))),
+      boton(LucideIcons.plus, 'Agregar una unidad${producto == null ? '' : ' de $producto'}', (ctx) {
+        vibracionLeve();
+        cambia((valor + 1).clamp(minimo, 99));
+        if (vuela) volarAlCarrito(ctx, oscuro: oscuro);
+      }, principal: true),
     ]);
   }
 }
@@ -249,7 +293,11 @@ class FotoProducto extends StatelessWidget {
               fit: BoxFit.contain,
               cacheWidth: 520,
               semanticLabel: p.nombre,
-              errorBuilder: (_, __, ___) => Center(child: Icon(LucideIcons.package, size: 40, color: C.grisTexto))),
+              // Aparece con un fundido corto sobre el color de su categoría (con red real, al llegar la foto).
+              frameBuilder: (ctx, hijo, cuadro, sincrona) => sincrona
+                  ? hijo
+                  : AnimatedOpacity(opacity: cuadro == null ? 0 : 1, duration: dur(ctx, 180), curve: Mov.entra, child: hijo),
+              errorBuilder: (_, _, _) => Center(child: Icon(LucideIcons.package, size: 40, color: C.grisTexto))),
     );
   }
 }
@@ -265,9 +313,11 @@ class IlustracionEstado extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: ExcludeSemantics(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(26),
-          child: SizedBox(width: ancho, child: AspectRatio(aspectRatio: 600 / 340, child: Image.asset('assets/img/estados/$archivo', fit: BoxFit.cover))),
+        child: Flota(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(R.l),
+            child: SizedBox(width: ancho, child: AspectRatio(aspectRatio: 600 / 340, child: Image.asset('assets/img/estados/$archivo', fit: BoxFit.cover, cacheWidth: 700))),
+          ),
         ),
       ),
     );
@@ -304,155 +354,6 @@ class PrecioProducto extends StatelessWidget {
   }
 }
 
-/// Tarjeta de producto de la grilla / carruseles.
-class TarjetaProducto extends StatelessWidget {
-  const TarjetaProducto(this.p, {super.key, required this.abrir});
-  final Producto p;
-  final VoidCallback abrir;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(
-      listenable: estado,
-      builder: (context, _) {
-        final enCarro = estado.carrito[p.id] ?? 0;
-        return Container(
-          decoration: BoxDecoration(
-            color: C.superficie,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: C.borde),
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Tocable(
-                etiqueta: '${p.nombre}, ${p.precioFinal} pesos${p.enOferta ? ', antes ${p.precio} pesos, ${p.descuento} por ciento de descuento' : ''}. Ver detalle',
-                onTap: abrir,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                  AspectRatio(
-                    aspectRatio: 1.18,
-                    child: Stack(fit: StackFit.expand, children: [
-                      Opacity(opacity: p.agotado ? .45 : 1, child: FotoProducto(p)),
-                      if (p.agotado)
-                        const Positioned(left: 10, top: 10, child: Insignia('Agotado', fondo: C.carbon)),
-                      if (p.enOferta && !p.agotado)
-                        Positioned(
-                            left: 0,
-                            top: 10,
-                            child: Container(
-                              padding: const EdgeInsets.fromLTRB(10, 5, 12, 5),
-                              decoration: const BoxDecoration(
-                                  color: C.rojo,
-                                  borderRadius: BorderRadius.horizontal(right: Radius.circular(10))),
-                              child: Text('-${p.descuento}%', style: T.etiqueta.copyWith(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w800)),
-                            )),
-                    ]),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(p.nombre,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: T.cuerpo.copyWith(fontSize: 16, height: 1.25, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 8),
-                      PrecioProducto(p),
-                    ]),
-                  ),
-                ]),
-              ),
-              const Spacer(),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(10, 4, 10, 12),
-                child: p.agotado
-                    ? Boton('Agotado por ahora', etiqueta: '${p.nombre}, agotado por ahora', estilo: EstiloBoton.suave, alto: 50, onTap: null)
-                    : enCarro == 0
-                    ? Boton('Agregar',
-                        etiqueta: 'Agregar ${p.nombre} al carrito',
-                        icono: LucideIcons.plus,
-                        estilo: EstiloBoton.suave,
-                        alto: 50,
-                        onTap: () {
-                          estado.agregar(p);
-                          avisoAgregado(context, p);
-                        })
-                    : Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        Cantidad(valor: enCarro, tam: 48, producto: p.nombre, cambia: (v) => v <= 0 ? quitarConDeshacer(context, p) : estado.cambiarCantidad(p, v)),
-                      ]),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-void _aviso(BuildContext context, String texto,
-    {String? accion, VoidCallback? alAccion, int segundos = 6, IconData icono = LucideIcons.circleCheck}) {
-  final m = ScaffoldMessenger.maybeOf(context);
-  m?.hideCurrentSnackBar();
-  m?.showSnackBar(SnackBar(
-    behavior: SnackBarBehavior.floating,
-    backgroundColor: C.verdeFondo,
-    margin: const EdgeInsets.fromLTRB(16, 0, 16, 96),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-    duration: Duration(seconds: segundos),
-    content: Row(children: [
-      Icon(icono, color: C.verdeMenta, size: 24),
-      const SizedBox(width: 12),
-      Expanded(child: Text(texto, maxLines: 2, overflow: TextOverflow.ellipsis, style: T.cuerpo.copyWith(color: Colors.white, fontSize: 16))),
-    ]),
-    action: accion == null ? null : SnackBarAction(label: accion, textColor: C.verdeMenta, onPressed: alAccion ?? () {}),
-  ));
-}
-
-void avisoAgregado(BuildContext context, Producto p) {
-  _aviso(context, 'Agregaste ${p.nombre}', accion: 'Ver carrito', alAccion: () {
-    Navigator.of(context).popUntil((r) => r.isFirst);
-    estado.irAPestana(3);
-  });
-}
-
-/// Quita un producto del carrito y deja 6 s para deshacer (nunca se borra "en silencio").
-void quitarConDeshacer(BuildContext context, Producto p) {
-  final n = estado.carrito[p.id] ?? 0;
-  if (n == 0) return;
-  estado.cambiarCantidad(p, 0);
-  _aviso(context, 'Quitaste ${p.nombre}', accion: 'Deshacer', alAccion: () => estado.agregar(p, n), icono: LucideIcons.trash2);
-}
-
-void avisoGeneral(BuildContext context, String texto, {String? accion, VoidCallback? alAccion}) =>
-    _aviso(context, texto, accion: accion, alAccion: alAccion);
-
-/// Dos columnas de altura pareja, sin alturas fijas (aguantan letra grande).
-class GrillaProductos extends StatelessWidget {
-  const GrillaProductos(this.productos, {super.key, required this.abrir});
-  final List<Producto> productos;
-  final void Function(Producto) abrir;
-
-  @override
-  Widget build(BuildContext context) {
-    final filas = <Widget>[];
-    for (var i = 0; i < productos.length; i += 2) {
-      final a = productos[i];
-      final b = i + 1 < productos.length ? productos[i + 1] : null;
-      filas.add(Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: IntrinsicHeight(
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Expanded(child: TarjetaProducto(a, abrir: () => abrir(a))),
-            const SizedBox(width: 14),
-            Expanded(child: b == null ? const SizedBox() : TarjetaProducto(b, abrir: () => abrir(b))),
-          ]),
-        ),
-      ));
-    }
-    return Column(children: filas);
-  }
-}
-
 class TituloSeccion extends StatelessWidget {
   const TituloSeccion(this.texto, {super.key, this.accion, this.alAccion, this.oscuro = false});
   final String texto;
@@ -462,8 +363,9 @@ class TituloSeccion extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
+    return Revelar(
+      child: Padding(
+      padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x8, Esp.x5, Esp.x3),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
         Expanded(
           child: Semantics(
@@ -476,117 +378,57 @@ class TituloSeccion extends StatelessWidget {
             etiqueta: accion,
             onTap: alAccion,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: Esp.x3, horizontal: Esp.x1),
               child: Row(children: [
                 Text(accion!, style: T.cuerpoFuerte.copyWith(color: oscuro ? C.oro : C.azulEnlace, fontSize: 16)),
-                Icon(LucideIcons.chevronRight, size: 20, color: oscuro ? C.oro : C.azulEnlace),
+                Icon(LucideIcons.chevronRight, size: Ico.s, color: oscuro ? C.oro : C.azulEnlace),
               ]),
             ),
           ),
       ]),
-    );
+    ));
   }
 }
 
-/// Campo de texto con etiqueta visible arriba (nunca solo placeholder).
-class Campo extends StatefulWidget {
-  const Campo(this.etiqueta,
-      {super.key,
-      this.controlador,
-      this.error,
-      this.ayuda,
-      this.clave = false,
-      this.teclado,
-      this.icono,
-      this.alCambiar,
-      this.valorInicial,
-      this.accion = TextInputAction.next,
-      this.autofill,
-      this.mayusculas = TextCapitalization.none});
-  final String etiqueta;
-  final TextEditingController? controlador;
-  final String? error;
-  final String? ayuda;
-  final bool clave;
-  final TextInputType? teclado;
-  final IconData? icono;
-  final ValueChanged<String>? alCambiar;
-  final String? valorInicial;
-  final TextInputAction accion;
-  final Iterable<String>? autofill;
-  final TextCapitalization mayusculas;
-
-  @override
-  State<Campo> createState() => _CampoState();
-}
-
-class _CampoState extends State<Campo> {
-  bool _ver = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final hayError = widget.error != null;
-    OutlineInputBorder borde(Color c, double w) =>
-        OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: c, width: w));
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(widget.etiqueta, style: T.cuerpoFuerte.copyWith(fontSize: 16)),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: widget.controlador,
-          initialValue: widget.controlador == null ? widget.valorInicial : null,
-          obscureText: widget.clave && !_ver,
-          keyboardType: widget.teclado,
-          textInputAction: widget.accion,
-          autofillHints: widget.autofill,
-          textCapitalization: widget.mayusculas,
-          enableSuggestions: !widget.clave,
-          autocorrect: !widget.clave,
-          onChanged: widget.alCambiar,
-          style: T.cuerpo.copyWith(fontSize: 18),
-          cursorColor: C.verde,
-          decoration: InputDecoration(
-            filled: true,
-            fillColor: C.superficie,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 17),
-            prefixIcon: widget.icono == null ? null : Icon(widget.icono, size: 22, color: C.grisTexto),
-            suffixIcon: widget.clave
-                ? Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: Tocable(
-                        etiqueta: _ver ? 'Ocultar contraseña' : 'Mostrar contraseña',
-                        onTap: () => setState(() => _ver = !_ver),
-                        child: SizedBox(
-                            width: 52,
-                            child: Icon(_ver ? LucideIcons.eyeOff : LucideIcons.eye, color: C.grisMedio, size: 22))),
-                  )
-                : null,
-            enabledBorder: borde(hayError ? C.error : C.bordeControl, hayError ? 2 : 1.5),
-            focusedBorder: borde(hayError ? C.error : C.verde, 2.5),
-            border: borde(C.bordeControl, 1.5),
-          ),
-        ),
-        if (hayError)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(padding: EdgeInsets.only(top: 2), child: Icon(LucideIcons.circleAlert, size: 18, color: C.error)),
-              const SizedBox(width: 6),
-              Expanded(child: Text(widget.error!, style: T.apoyo.copyWith(color: C.error, fontWeight: FontWeight.w600))),
-            ]),
-          )
-        else if (widget.ayuda != null)
-          Padding(padding: const EdgeInsets.only(top: 8), child: Text(widget.ayuda!, style: T.apoyo)),
-      ],
-    );
-  }
-}
-
-/// Barra de progreso hacia despacho gratis.
-class BarraDespacho extends StatelessWidget {
+/// Barra de progreso hacia despacho gratis. Al lograrlo, el camión se vuelve una marca, la barra late una vez
+/// y vibra (solo si la pestaña se está viendo). La versión compacta ocupa una línea: es la del inicio.
+class BarraDespacho extends StatefulWidget {
   const BarraDespacho({super.key, this.compacta = false});
   final bool compacta;
+
+  @override
+  State<BarraDespacho> createState() => _BarraDespachoState();
+}
+
+class _BarraDespachoState extends State<BarraDespacho> with SingleTickerProviderStateMixin {
+  late final AnimationController _pulso = AnimationController(vsync: this, duration: Mov.enfasis);
+  late final Animation<double> _escala = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.035).chain(CurveTween(curve: Mov.entra)), weight: 40),
+    TweenSequenceItem(tween: Tween(begin: 1.035, end: 1.0).chain(CurveTween(curve: Curves.easeOutBack)), weight: 60),
+  ]).animate(_pulso);
+  late bool _antes = estado.despachoGratis;
+
+  @override
+  void initState() {
+    super.initState();
+    estado.addListener(_alCambiar);
+  }
+
+  void _alCambiar() {
+    final ahora = estado.despachoGratis;
+    if (ahora && !_antes && mounted && TickerMode.valuesOf(context).enabled && !sinMovimiento(context)) {
+      _pulso.forward(from: 0);
+      vibracionLogro();
+    }
+    _antes = ahora;
+  }
+
+  @override
+  void dispose() {
+    estado.removeListener(_alCambiar);
+    _pulso.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -596,36 +438,39 @@ class BarraDespacho extends StatelessWidget {
         final lograda = estado.despachoGratis;
         final fraccion = (estado.subtotal / despachoGratisDesde).clamp(0.0, 1.0);
         final vacio = estado.subtotal == 0;
-        return Container(
-          padding: EdgeInsets.all(compacta ? 14 : 16),
-          decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(18)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [
-              Icon(LucideIcons.truck, color: C.verdeOscuro, size: 24),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  lograda
-                      ? '¡Tu despacho es gratis!'
-                      : vacio
-                          ? 'Despacho gratis desde ${clp(despachoGratisDesde)}'
-                          : 'Te faltan ${clp(estado.faltaParaGratis)} para el despacho gratis',
-                  style: T.cuerpoFuerte.copyWith(color: C.verdeProfundo, fontSize: 16),
+        final compacta = widget.compacta;
+        final texto = lograda
+            ? '¡Tu despacho es gratis!'
+            : vacio
+                ? 'Despacho gratis desde ${clp(despachoGratisDesde)}'
+                : 'Te faltan ${clp(estado.faltaParaGratis)} para el despacho gratis';
+        return ScaleTransition(
+          scale: _escala,
+          child: Container(
+            padding: compacta ? const EdgeInsets.fromLTRB(Esp.x3, Esp.x3, Esp.x3, Esp.x3) : const EdgeInsets.all(Esp.x4),
+            decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(compacta ? R.m : R.l)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                AnimatedSwitcher(
+                  duration: dur(context, 200),
+                  transitionBuilder: (h, a) => ScaleTransition(scale: a, child: h),
+                  child: Icon(lograda ? LucideIcons.circleCheck : LucideIcons.truck, key: ValueKey(lograda), color: C.verdeOscuro, size: compacta ? 22 : 24),
+                ),
+                const SizedBox(width: Esp.x3),
+                Expanded(child: Text(texto, style: (compacta ? T.cuerpoMFuerte.copyWith(fontSize: 15) : T.cuerpoMFuerte).copyWith(color: C.verdeProfundo))),
+              ]),
+              SizedBox(height: compacta ? 8 : 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(R.s),
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween(end: fraccion),
+                  duration: dur(context, 500),
+                  curve: Mov.entra,
+                  builder: (_, v, _) => LinearProgressIndicator(value: v, minHeight: compacta ? 8 : 12, backgroundColor: C.superficie, color: C.verde),
                 ),
               ),
             ]),
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: TweenAnimationBuilder<double>(
-                tween: Tween(end: fraccion),
-                duration: dur(context, 500),
-                curve: Curves.easeOutCubic,
-                builder: (_, v, __) => LinearProgressIndicator(
-                    value: v, minHeight: 12, backgroundColor: C.superficie, color: C.verde),
-              ),
-            ),
-          ]),
+          ),
         );
       },
     );
@@ -634,7 +479,7 @@ class BarraDespacho extends StatelessWidget {
 
 /// Separador visual de pantallas: tarjeta plana blanca con borde.
 class Panel extends StatelessWidget {
-  const Panel({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.fondo, this.borde});
+  const Panel({super.key, required this.child, this.padding = const EdgeInsets.all(Esp.x4), this.fondo, this.borde});
   final Widget child;
   final EdgeInsets padding;
   final Color? fondo;
@@ -643,7 +488,7 @@ class Panel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
         padding: padding,
-        decoration: BoxDecoration(color: fondo ?? C.superficie, borderRadius: BorderRadius.circular(20), border: Border.all(color: borde ?? C.borde)),
+        decoration: BoxDecoration(color: fondo ?? C.superficie, borderRadius: BorderRadius.circular(R.l), border: Border.all(color: borde ?? C.borde)),
         child: child,
       );
 }
@@ -666,24 +511,24 @@ class ResumenErrores extends StatelessWidget {
       liveRegion: true,
       container: true,
       child: Container(
-        margin: const EdgeInsets.only(bottom: 20),
-        padding: const EdgeInsets.all(16),
+        margin: const EdgeInsets.only(bottom: Esp.x5),
+        padding: const EdgeInsets.all(Esp.x4),
         decoration: BoxDecoration(
           color: C.error.withValues(alpha: .10),
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(R.m),
           border: Border.all(color: C.error, width: 2),
         ),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Icon(LucideIcons.circleAlert, color: C.error, size: 24),
-            const SizedBox(width: 10),
+            Icon(LucideIcons.circleAlert, color: C.error, size: Ico.m),
+            const SizedBox(width: Esp.x3),
             Expanded(child: Text(n == 1 ? 'Falta 1 dato para continuar' : 'Faltan $n datos para continuar', style: T.cuerpoFuerte.copyWith(color: C.error))),
           ]),
-          const SizedBox(height: 8),
+          const SizedBox(height: Esp.x2),
           for (final m in mensajes)
             Padding(
-              padding: const EdgeInsets.only(top: 4, left: 34),
-              child: Text(m, style: T.cuerpo.copyWith(fontSize: 16)),
+              padding: const EdgeInsets.only(top: Esp.x1, left: 34),
+              child: Text(m, style: T.cuerpoM),
             ),
         ]),
       ),
@@ -702,10 +547,10 @@ class FilaHorizontal extends StatelessWidget {
   Widget build(BuildContext context) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: Esp.x5),
       child: IntrinsicHeight(
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          for (var i = 0; i < hijos.length; i++) ...[if (i > 0) SizedBox(width: separacion), hijos[i]],
+          for (var i = 0; i < hijos.length; i++) ...[if (i > 0) SizedBox(width: separacion), Revelar(indice: i, child: hijos[i])],
         ]),
       ),
     );
@@ -733,10 +578,10 @@ class OpcionFila extends StatelessWidget {
       child: AnimatedContainer(
         duration: dur(context, 160),
         constraints: const BoxConstraints(minHeight: 60),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: Esp.x4, vertical: Esp.x3),
         decoration: BoxDecoration(
           color: activo ? C.verde : C.superficie,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(R.m),
           border: Border.all(color: activo ? C.verde : C.bordeControl, width: 1.5),
         ),
         child: Row(children: [
@@ -745,17 +590,17 @@ class OpcionFila extends StatelessWidget {
             child: Center(
               child: muestra != null
                   ? FittedBox(fit: BoxFit.scaleDown, child: Text('Aa', maxLines: 1, style: T.titulo3.copyWith(fontSize: muestra, color: color, height: 1)))
-                  : Icon(icono, size: 24, color: color),
+                  : Icon(icono, size: Ico.m, color: color),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: Esp.x3),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(texto, style: T.cuerpoFuerte.copyWith(color: color, fontSize: 17)),
               if (detalle != null) Text(detalle!, style: T.apoyo.copyWith(color: activo ? Colors.white.withValues(alpha: .9) : C.grisTexto)),
             ]),
           ),
-          if (activo) const Icon(LucideIcons.check, size: 24, color: Colors.white),
+          if (activo) const Icon(LucideIcons.check, size: Ico.m, color: Colors.white),
         ]),
       ),
     );

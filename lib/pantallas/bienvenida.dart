@@ -16,8 +16,8 @@ class BienvenidaPantalla extends StatelessWidget {
     estado.pestana = 0;
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       transitionDuration: dur(context, 400),
-      pageBuilder: (_, __, ___) => const Shell(),
-      transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
+      pageBuilder: (_, _, _) => const Shell(),
+      transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
     ));
   }
 
@@ -50,12 +50,12 @@ class BienvenidaPantalla extends StatelessWidget {
                 children: [
                   // Zona visual
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+                    padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x5, 0),
                     child: Container(
                       height: 320,
                       width: double.infinity,
                       clipBehavior: Clip.antiAlias,
-                      decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(32)),
+                      decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(R.xl)),
                       child: Stack(children: [
                         // Fondo de marca: verde profundo con la textura de doodles y los productos reales apilados.
                         Positioned.fill(
@@ -65,9 +65,9 @@ class BienvenidaPantalla extends StatelessWidget {
                             ),
                           ),
                         ),
-                        Positioned.fill(child: Opacity(opacity: .18, child: Image.asset('assets/img/patrones/oscuro-v2.webp', fit: BoxFit.cover))),
-                        Positioned(left: -8, bottom: -6, child: Image.asset('assets/img/hero/bebidas.webp', height: 138, fit: BoxFit.contain, semanticLabel: '')),
-                        Positioned(right: -12, bottom: -4, child: Image.asset('assets/img/hero/abarrotes.webp', height: 140, fit: BoxFit.contain, semanticLabel: '')),
+                        Positioned.fill(child: Image.asset('assets/img/patrones/oscuro-v2.webp', fit: BoxFit.cover, opacity: const AlwaysStoppedAnimation(.18))),
+                        Positioned(left: -8, bottom: -6, child: Image.asset('assets/img/hero/bebidas.webp', cacheHeight: 420, height: 138, fit: BoxFit.contain, semanticLabel: '')),
+                        Positioned(right: -12, bottom: -4, child: Image.asset('assets/img/hero/abarrotes.webp', cacheHeight: 420, height: 140, fit: BoxFit.contain, semanticLabel: '')),
                         Positioned(
                           left: 18,
                           top: 18,
@@ -79,19 +79,19 @@ class BienvenidaPantalla extends StatelessWidget {
                               border: Border.all(color: C.superficie, width: 4),
                               boxShadow: [BoxShadow(color: C.verdeProfundo.withValues(alpha: .25), blurRadius: 14, offset: const Offset(0, 6))],
                             ),
-                            child: ClipOval(child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover, semanticLabel: 'Logo de Comercial Sedyjo')),
+                            child: ClipOval(child: Image.asset('assets/img/logo.webp', cacheWidth: 260, fit: BoxFit.cover, semanticLabel: 'Logo de Comercial Sedyjo')),
                           ),
                         ),
                         Positioned(
                           right: 16,
                           top: 26,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(14)),
+                            padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: Esp.x3),
+                            decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(R.s)),
                             child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(LucideIcons.truck, size: 22, color: C.verdeOscuro),
-                              const SizedBox(width: 8),
-                              Text('24 a 48 horas', style: T.cuerpoFuerte.copyWith(fontSize: 16, color: C.verdeOscuro)),
+                              Icon(LucideIcons.truck, size: Ico.m, color: C.verdeOscuro),
+                              const SizedBox(width: Esp.x2),
+                              Text('24 a 48 horas', style: T.cuerpoMFuerte.copyWith(color: C.verdeOscuro)),
                             ]),
                           ),
                         ),
@@ -99,45 +99,45 @@ class BienvenidaPantalla extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 28, 24, 0),
+                    padding: const EdgeInsets.fromLTRB(Esp.x6, Esp.x8, Esp.x6, 0),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Semantics(header: true, child: Text(titulo, style: T.titulo1)),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: Esp.x3),
                       Text(texto, style: T.cuerpo.copyWith(color: C.grisMedio)),
                     ]),
                   ),
                   if (primera && !conSesion) ...[
-                    const SizedBox(height: 20),
-                    const Padding(padding: EdgeInsets.symmetric(horizontal: 24), child: _TresPasos()),
+                    const SizedBox(height: Esp.x5),
+                    const Padding(padding: EdgeInsets.symmetric(horizontal: Esp.x6), child: _TresPasos()),
                   ],
-                  const SizedBox(height: 28),
+                  const SizedBox(height: Esp.x8),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    padding: const EdgeInsets.symmetric(horizontal: Esp.x6),
                     child: conSesion
                         ? Column(children: [
                             Boton('Entrar a la tienda', icono: LucideIcons.shoppingBasket, onTap: () => _entrar(context), alto: 62),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: Esp.x3),
                             Boton('No soy $nombre: cambiar de cuenta', estilo: EstiloBoton.suave, onTap: estado.cerrarSesion),
                           ])
                         : Column(children: [
                             Boton(primera ? 'Comprar sin crear cuenta' : 'Seguir comprando',
                                 icono: LucideIcons.shoppingBasket, onTap: () => _entrar(context), alto: 62),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: Esp.x3),
                             Boton('Ya tengo cuenta: ingresar',
                                 estilo: EstiloBoton.contorno,
                                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const IngresarPantalla(desdeBienvenida: true)))),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: Esp.x3),
                             Boton('Crear mi cuenta',
                                 estilo: EstiloBoton.suave,
                                 onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const RegistroPantalla(desdeBienvenida: true)))),
                           ]),
                   ),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: Esp.x6),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                    padding: const EdgeInsets.fromLTRB(Esp.x6, 0, Esp.x6, Esp.x6),
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      Icon(LucideIcons.phone, size: 20, color: C.azulEnlace),
-                      const SizedBox(width: 8),
+                      Icon(LucideIcons.phone, size: Ico.s, color: C.azulEnlace),
+                      const SizedBox(width: Esp.x2),
                       Flexible(
                         child: Text('¿Necesitas ayuda? Llámanos al $telefonoVisible',
                             textAlign: TextAlign.center, style: T.apoyo.copyWith(color: C.azulEnlace, fontWeight: FontWeight.w700)),
@@ -163,12 +163,12 @@ class _TresPasos extends StatelessWidget {
     const pasos = [('elige', 'Elige'), ('paga', 'Paga'), ('recibe', 'Recibe')];
     return Row(children: [
       for (final (i, p) in pasos.indexed) ...[
-        if (i > 0) Padding(padding: const EdgeInsets.only(bottom: 22), child: Icon(LucideIcons.chevronRight, size: 20, color: C.bordeControl)),
+        if (i > 0) Padding(padding: const EdgeInsets.only(bottom: Esp.x6), child: Icon(LucideIcons.chevronRight, size: Ico.s, color: C.bordeControl)),
         Expanded(
           child: Column(children: [
             ExcludeSemantics(child: Image.asset('assets/img/tutorial/${p.$1}.webp', width: 72, height: 72, cacheWidth: 200)),
-            const SizedBox(height: 4),
-            Text('${i + 1}. ${p.$2}', style: T.cuerpoFuerte.copyWith(fontSize: 16)),
+            const SizedBox(height: Esp.x1),
+            Text('${i + 1}. ${p.$2}', style: T.cuerpoMFuerte),
           ]),
         ),
       ],

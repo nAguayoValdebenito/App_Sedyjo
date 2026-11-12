@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -8,6 +9,7 @@ import 'pantallas/avisos.dart';
 import 'pantallas/ayuda.dart';
 import 'pantallas/bienvenida.dart';
 import 'pantallas/checkout.dart';
+import 'pantallas/pago_resultado.dart';
 import 'pantallas/cuenta.dart';
 import 'pantallas/direccion.dart';
 import 'pantallas/pedidos.dart';
@@ -20,12 +22,18 @@ final navKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Catalogo.cargar();
-  runApp(const SedyjoApp());
+  // Lo mínimo antes del primer cuadro: saber si es la primera vez (decide qué carga se ve).
+  await Memoria.cargar();
+  Memoria.empezarAGuardar();
+  // El catálogo se lee mientras se ve la pantalla de carga; esta no avanza hasta que termina.
+  runApp(SedyjoApp(carga: Catalogo.cargar()));
 }
 
 class SedyjoApp extends StatefulWidget {
-  const SedyjoApp({super.key});
+  const SedyjoApp({super.key, this.carga});
+
+  /// Trabajo real en curso al abrir la app (la pantalla de carga lo espera).
+  final Future<void>? carga;
 
   @override
   State<SedyjoApp> createState() => _SedyjoAppState();
@@ -55,6 +63,14 @@ class _SedyjoAppState extends State<SedyjoApp> with WidgetsBindingObserver {
   @override
   void didChangePlatformBrightness() => _alCambiarEstado();
 
+  /// Al pasar a segundo plano (o cerrarse) se guarda de inmediato lo último que hizo la persona.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estadoCiclo) {
+    if (estadoCiclo == AppLifecycleState.paused || estadoCiclo == AppLifecycleState.inactive || estadoCiclo == AppLifecycleState.detached) {
+      Memoria.guardarYa();
+    }
+  }
+
   /// El modo se resuelve antes de construir las pantallas; si cambia, se reconstruye todo sin perder la navegación.
   void _alCambiarEstado() {
     final nueva = _calcularNoche();
@@ -79,7 +95,7 @@ class _SedyjoAppState extends State<SedyjoApp> with WidgetsBindingObserver {
       debugShowCheckedModeBanner: false,
       navigatorKey: navKey,
       theme: construirTema(),
-      home: const SplashPantalla(),
+      home: SplashPantalla(carga: widget.carga),
       builder: (context, child) => ListenableBuilder(
         listenable: estado,
         builder: (context, _) => _MarcoMaqueta(child: child!),
@@ -96,22 +112,28 @@ class _MarcoMaqueta extends StatelessWidget {
 
   static const double _ancho = 400;
   static const double _alto = 840;
+  static const double _anchoMaximo = 840;
 
   @override
   Widget build(BuildContext context) {
     final mq = MediaQuery.of(context);
     final sistema = mq.textScaler.scale(10) / 10;
-    if (mq.size.width < 600) {
+    // Teléfono, o tableta/escritorio reales (no la maqueta en un navegador): pantalla completa con un ancho máximo
+    // centrado, para que las pantallas no se estiren sin fin.
+    if (mq.size.width < 600 || !kIsWeb) {
+      final ancho = mq.size.width;
       return MediaQuery(
         data: mq.copyWith(textScaler: TextScaler.linear(sistema * estado.escalaTexto)),
-        child: child,
+        child: ancho <= _anchoMaximo
+            ? child
+            : ColoredBox(color: C.fondo, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: _anchoMaximo), child: child))),
       );
     }
     final telefono = MediaQuery(
       data: mq.copyWith(
         size: const Size(_ancho, _alto),
-        padding: const EdgeInsets.only(top: 36, bottom: 18),
-        viewPadding: const EdgeInsets.only(top: 36, bottom: 18),
+        padding: const EdgeInsets.only(top: 36, bottom: Esp.x4),
+        viewPadding: const EdgeInsets.only(top: 36, bottom: Esp.x4),
         textScaler: TextScaler.linear(estado.escalaTexto),
         disableAnimations: estado.reducirMovimiento,
       ),
@@ -132,7 +154,7 @@ class _MarcoMaqueta extends StatelessWidget {
     final carcasa = Container(
       width: _ancho + 20,
       height: _alto + 20,
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(Esp.x3),
       decoration: BoxDecoration(
         color: C.negro,
         borderRadius: BorderRadius.circular(54),
@@ -153,12 +175,12 @@ class _MarcoMaqueta extends StatelessWidget {
         Expanded(
           child: Center(
             child: Padding(
-              padding: const EdgeInsets.all(18),
+              padding: const EdgeInsets.all(Esp.x4),
               child: FittedBox(fit: BoxFit.contain, child: carcasa),
             ),
           ),
         ),
-        if (panel) const SizedBox(width: 24),
+        if (panel) const SizedBox(width: Esp.x6),
       ]),
     );
   }
@@ -170,7 +192,7 @@ class _BarraEstado extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 8, 24, 0),
+      padding: const EdgeInsets.fromLTRB(Esp.x8, Esp.x2, Esp.x6, 0),
       child: Row(children: [
         Text('9:41', style: T.etiqueta.copyWith(fontSize: 15, color: C.tinta)),
         const Spacer(),
@@ -178,7 +200,7 @@ class _BarraEstado extends StatelessWidget {
         const SizedBox(width: 5),
         Icon(LucideIcons.wifi, size: 15, color: C.tinta),
         const SizedBox(width: 5),
-        Icon(LucideIcons.batteryFull, size: 18, color: C.tinta),
+        Icon(LucideIcons.batteryFull, size: Ico.s, color: C.tinta),
       ]),
     );
   }
@@ -206,8 +228,9 @@ class _PanelVistas extends StatelessWidget {
   Widget build(BuildContext context) {
     final grupos = <(String, List<(String, VoidCallback)>)>[
       ('Entrada', [
+        ('Pantalla de carga (primera vez, con canasta)', () => _nav.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashPantalla(completa: true)), (r) => false)),
         ('Pantalla de carga (lenta, 16 s)', () => _nav.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashPantalla(duracion: Duration(seconds: 16))), (r) => false)),
-        ('Pantalla de carga (normal)', () => _nav.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashPantalla()), (r) => false)),
+        ('Pantalla de carga (regreso, breve)', () => _nav.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SplashPantalla(completa: false)), (r) => false)),
         ('Bienvenida', () => _nav.pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const BienvenidaPantalla()), (r) => false)),
         ('Ingresar', () => _empujar(const IngresarPantalla())),
         ('Crear cuenta', () => _empujar(const RegistroPantalla())),
@@ -225,6 +248,21 @@ class _PanelVistas extends StatelessWidget {
         ('Oferta relámpago', () {
           _pestana(0);
           Future.delayed(const Duration(milliseconds: 400), mostrarRelampago);
+        }),
+      ]),
+      ('Carga de productos', [
+        ('Ver esqueletos de carga', () {
+          _pestana(0);
+          Catalogo.probarCargaInicial();
+        }),
+        ('Ver error de carga (sin red)', () {
+          _pestana(0);
+          estado.cambiarSimulacionRed(SimulacionRed.error);
+          Catalogo.probarCargaInicial();
+        }),
+        ('Volver a red normal y reintentar', () {
+          estado.cambiarSimulacionRed(SimulacionRed.normal);
+          Catalogo.recargar();
         }),
       ]),
       ('Compra', [
@@ -267,11 +305,11 @@ class _PanelVistas extends StatelessWidget {
       builder: (context, _) => Material(
         color: Colors.transparent,
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 28, 12, 28),
+          padding: const EdgeInsets.fromLTRB(Esp.x6, Esp.x8, Esp.x3, Esp.x8),
           children: [
             Row(children: [
-              ClipOval(child: Image.asset('assets/img/logo.webp', width: 44, height: 44)),
-              const SizedBox(width: 12),
+              ClipOval(child: Image.asset('assets/img/logo.webp', cacheWidth: 130, width: 44, height: 44)),
+              const SizedBox(width: Esp.x3),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text('Maqueta de la app', style: T.titulo3.copyWith(fontSize: 18)),
@@ -279,46 +317,48 @@ class _PanelVistas extends StatelessWidget {
                 ]),
               ),
             ]),
-            const SizedBox(height: 18),
+            const SizedBox(height: Esp.x4),
             _Interruptor('Sesión iniciada', estado.conSesion, (v) => v ? estado.iniciarSesion() : estado.cerrarSesion()),
             _Interruptor('Primera vez en la app', estado.primeraVez, (v) {
               estado.primeraVez = v;
               estado.refrescar();
             }),
             _Interruptor('Modo oscuro', C.oscuro, (v) => estado.cambiarModoTema(v ? ModoTema.oscuro : ModoTema.claro)),
-            const SizedBox(height: 8),
-            Text('Tamaño de letra', style: T.etiqueta.copyWith(fontSize: 14, color: C.grisMedio)),
-            const SizedBox(height: 6),
+            _Interruptor('Pago rechazado (simulado)', estado.simulacionPago == SimulacionPago.rechazado, (v) => estado.cambiarSimulacionPago(v ? SimulacionPago.rechazado : SimulacionPago.aprobado)),
+            _Interruptor('Red lenta (2,5 s)', estado.simulacionRed == SimulacionRed.lenta, (v) => estado.cambiarSimulacionRed(v ? SimulacionRed.lenta : SimulacionRed.normal)),
+            const SizedBox(height: Esp.x2),
+            Text('Tamaño de letra', style: T.etiqueta.copyWith(color: C.grisMedio)),
+            const SizedBox(height: Esp.x2),
             Row(children: [
               for (final (i, e) in [(1.0, 'Normal'), (1.15, 'Grande'), (1.3, 'Muy grande')].indexed) ...[
-                if (i > 0) const SizedBox(width: 6),
+                if (i > 0) const SizedBox(width: Esp.x2),
                 Expanded(
                   child: GestureDetector(
                     onTap: () => estado.cambiarEscala(e.$1),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      padding: const EdgeInsets.symmetric(vertical: Esp.x2),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: estado.escalaTexto == e.$1 ? C.verde : C.superficie,
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Text(e.$2, style: T.etiqueta.copyWith(fontSize: 14, color: estado.escalaTexto == e.$1 ? Colors.white : C.tinta)),
+                      child: Text(e.$2, style: T.etiqueta.copyWith(color: estado.escalaTexto == e.$1 ? Colors.white : C.tinta)),
                     ),
                   ),
                 ),
               ],
             ]),
             for (final g in grupos) ...[
-              const SizedBox(height: 18),
+              const SizedBox(height: Esp.x4),
               Text(g.$1.toUpperCase(), style: T.etiqueta.copyWith(fontSize: 12, color: C.grisMedio, letterSpacing: .8)),
-              const SizedBox(height: 6),
+              const SizedBox(height: Esp.x2),
               for (final v in g.$2)
                 GestureDetector(
                   onTap: v.$2,
                   behavior: HitTestBehavior.opaque,
                   child: Container(
-                    margin: const EdgeInsets.only(bottom: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                    margin: const EdgeInsets.only(bottom: Esp.x1),
+                    padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: 9),
                     decoration: BoxDecoration(color: C.superficie.withValues(alpha: .7), borderRadius: BorderRadius.circular(10)),
                     child: Row(children: [
                       Expanded(child: Text(v.$1, style: T.cuerpo.copyWith(fontSize: 15))),

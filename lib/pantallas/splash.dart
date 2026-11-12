@@ -1,20 +1,31 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../app/datos.dart';
 import '../app/tema.dart';
 import '../ui/componentes.dart';
 import 'bienvenida.dart';
 
-/// Pantalla de carga: una canasta que va recibiendo bebidas, frutas, pan y lácteos;
-/// al llenarse se transforma en el logo de Sedyjo. Con "reducir movimiento" solo se ve el logo.
+/// Pantalla de carga. Siempre se ve la animación completa: una canasta va recibiendo bebidas, frutas, pan y lácteos
+/// y al llenarse se transforma en el logo (5 s). Existe una versión breve (solo logo, 1,4 s) para usarla si se decide.
+/// En ambos casos corre en paralelo a la carga real ([carga]) y un toque la salta. Con "reducir movimiento"
+/// solo se ve el logo.
 class SplashPantalla extends StatefulWidget {
-  const SplashPantalla({super.key, this.alTerminar, this.duracion = const Duration(milliseconds: 7000)});
+  const SplashPantalla({super.key, this.alTerminar, this.duracion, this.completa, this.carga});
   final VoidCallback? alTerminar;
 
-  /// Duración total de la animación (el panel de la maqueta la lanza más lenta para poder revisarla).
-  final Duration duracion;
+  /// Duración total de la animación. Si no se indica: 4,5 s la versión completa y 1,4 s la breve.
+  /// (El panel de la maqueta la lanza más lenta para poder revisarla.)
+  final Duration? duracion;
+
+  /// Fuerza la versión completa (`true`) o la breve (`false`). Si no se indica: siempre la completa.
+  final bool? completa;
+
+  /// Trabajo real en curso (catálogo, sesión). La pantalla no avanza hasta que termine, aunque la animación acabe antes.
+  final Future<void>? carga;
 
   @override
   State<SplashPantalla> createState() => _SplashPantallaState();
@@ -32,22 +43,26 @@ class _Item {
 }
 
 const _items = <_Item>[
-  _Item(LucideIcons.cupSoda, C.azul, Color(0xFFDCEBF7), -58, 104, .04, -.18),
-  _Item(LucideIcons.apple, C.rojo, Color(0xFFFBE0DE), 56, 108, .17, .16),
-  _Item(LucideIcons.milk, C.verdeBanner, Color(0xFFFFFFFF), -4, 82, .30, .05),
-  _Item(LucideIcons.croissant, Color(0xFF9A5B13), Color(0xFFFBEFD5), -28, 112, .43, -.08),
-  _Item(LucideIcons.carrot, Color(0xFFC25A12), Color(0xFFFCE5D2), 32, 114, .56, .12),
+  _Item(LucideIcons.cupSoda, C.azul, Color(0xFFDCEBF7), -58, 104, .02, -.18),
+  _Item(LucideIcons.apple, C.rojo, Color(0xFFFBE0DE), 56, 108, .14, .16),
+  _Item(LucideIcons.milk, C.verdeBanner, Color(0xFFFFFFFF), -4, 82, .26, .05),
+  _Item(LucideIcons.croissant, Color(0xFF9A5B13), Color(0xFFFBEFD5), -28, 112, .38, -.08),
+  _Item(LucideIcons.carrot, Color(0xFFC25A12), Color(0xFFFCE5D2), 32, 114, .50, .12),
 ];
 
 class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProviderStateMixin {
   late final AnimationController _ctl;
   bool _iniciado = false;
+  bool _ido = false;
+  Future<void> _imagenes = Future.value();
 
+  /// Versión completa con canasta (primera vez o pedida) o breve con solo el logo.
+  late final bool _completa = widget.completa ?? !estado.cargaBreve;
 
   @override
   void initState() {
     super.initState();
-    _ctl = AnimationController(vsync: this, duration: widget.duracion);
+    _ctl = AnimationController(vsync: this, duration: widget.duracion ?? (_completa ? const Duration(milliseconds: 5000) : const Duration(milliseconds: 1400)));
     _ctl.addStatusListener((s) {
       if (s == AnimationStatus.completed) _terminar();
     });
@@ -58,8 +73,11 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
     super.didChangeDependencies();
     if (_iniciado) return;
     _iniciado = true;
+    // Mientras se ve la carga, se dejan listas las imágenes de las primeras pantallas (con el mismo tamaño
+    // con que se mostrarán), para que no aparezcan "de a poco" al entrar.
+    _imagenes = _precargar(context);
     // Modo revisión de diseño: ?splash=0.5 congela la animación en ese instante.
-    final fijo = double.tryParse(Uri.base.queryParameters['splash'] ?? '');
+    final fijo = kDebugMode ? double.tryParse(Uri.base.queryParameters['splash'] ?? '') : null;
     if (fijo != null) {
       _ctl.value = fijo.clamp(0.0, 1.0);
       return;
@@ -72,7 +90,15 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
     }
   }
 
-  void _terminar() {
+  /// Avanza cuando la carga real terminó (si falla, la tienda muestra el error en cada sección).
+  Future<void> _terminar() async {
+    if (_ido || !mounted) return;
+    _ido = true;
+    try {
+      await widget.carga;
+    } catch (_) {}
+    // Espera las imágenes un momento como máximo: nunca retiene la entrada por ellas.
+    await _imagenes.timeout(const Duration(seconds: 2), onTimeout: () {});
     if (!mounted) return;
     if (widget.alTerminar != null) {
       widget.alTerminar!();
@@ -80,8 +106,8 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
     }
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       transitionDuration: dur(context, 500),
-      pageBuilder: (_, __, ___) => const BienvenidaPantalla(),
-      transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
+      pageBuilder: (_, _, _) => const BienvenidaPantalla(),
+      transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
     ));
   }
 
@@ -91,6 +117,24 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
     super.dispose();
   }
 
+  Future<void> _precargar(BuildContext context) {
+    ImageProvider an(String ruta, {int? ancho, int? alto}) =>
+        ancho == null && alto == null ? AssetImage(ruta) : ResizeImage(AssetImage(ruta), width: ancho, height: alto);
+    final lista = [
+      an('assets/img/logo.webp', ancho: 260),
+      an('assets/img/hero/bebidas.webp', alto: 420),
+      an('assets/img/hero/abarrotes.webp', alto: 420),
+      an('assets/img/patrones/oscuro-v2.webp'),
+      an('assets/img/tutorial/elige.webp', ancho: 200),
+      an('assets/img/tutorial/paga.webp', ancho: 200),
+      an('assets/img/tutorial/recibe.webp', ancho: 200),
+      an('assets/img/hero/abarrotes.webp', ancho: 420),
+      an('assets/img/hero/dulces.webp', ancho: 420),
+      an('assets/img/hero/bebidas.webp', ancho: 420),
+    ];
+    return Future.wait([for (final i in lista) precacheImage(i, context).catchError((_) {})]).then((_) {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final quieto = sinMovimiento(context);
@@ -98,7 +142,7 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
       backgroundColor: C.verdeFondo,
       body: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: _terminar, // un toque en cualquier parte salta la animación
+        onTap: _terminar, // un toque en cualquier parte salta la animación (y espera la carga real)
         child: Semantics(
         hint: 'Toca la pantalla para entrar ahora',
         child: Container(
@@ -107,8 +151,8 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
               begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [C.verdeFondo, Color(0xFF184A37)]),
         ),
         child: Stack(children: [
-          Positioned.fill(child: Opacity(opacity: .2, child: Image.asset('assets/img/patrones/oscuro.webp', fit: BoxFit.cover))),
-          if (!quieto) Positioned.fill(child: _Burbujas(animacion: _ctl)),
+          Positioned.fill(child: Image.asset('assets/img/patrones/oscuro.webp', fit: BoxFit.cover, opacity: const AlwaysStoppedAnimation(.2))),
+          if (!quieto && _completa) Positioned.fill(child: _Burbujas(animacion: _ctl)),
           SafeArea(
             child: Column(children: [
               const Spacer(flex: 3),
@@ -121,17 +165,17 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
                     height: 300,
                     child: AnimatedBuilder(
                       animation: _ctl,
-                      builder: (_, __) => _Escena(t: _ctl.value),
+                      builder: (_, _) => _Escena(t: _ctl.value, completa: _completa),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: Esp.x3),
               AnimatedBuilder(
                 animation: _ctl,
-                builder: (_, __) {
+                builder: (_, _) {
                   final t = _ctl.value;
-                  final aparece = Curves.easeOut.transform(((t - .74) / .16).clamp(0.0, 1.0));
+                  final aparece = Curves.easeOut.transform(((t - (_completa ? .74 : .25)) / (_completa ? .16 : .3)).clamp(0.0, 1.0));
                   return Opacity(
                     opacity: aparece,
                     child: Transform.translate(
@@ -139,7 +183,7 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
                       child: Column(children: [
                         Text('Comercial Sedyjo',
                             style: T.titulo1.copyWith(color: Colors.white, fontSize: 32, letterSpacing: -.3)),
-                        const SizedBox(height: 6),
+                        const SizedBox(height: Esp.x2),
                         Text('Tu compra, directo a tu casa',
                             style: T.cuerpo.copyWith(color: C.verdePalido, fontSize: 18)),
                       ]),
@@ -150,9 +194,9 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
               const Spacer(flex: 2),
               AnimatedBuilder(
                 animation: _ctl,
-                builder: (_, __) {
+                builder: (_, _) {
                   final t = _ctl.value;
-                  final frases = ['Abriendo la tienda…', 'Eligiendo tus favoritos…', 'Buscando las ofertas…', '¡Todo listo!'];
+                  final frases = _completa ? ['Abriendo la tienda…', 'Eligiendo tus favoritos…', 'Buscando las ofertas…', '¡Todo listo!'] : ['Abriendo la tienda…', 'Abriendo la tienda…', 'Abriendo la tienda…', '¡Todo listo!'];
                   final fase = (t * 3.99).floor().clamp(0, 3);
                   return Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 56),
@@ -161,7 +205,7 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
                         liveRegion: true,
                         child: Text(frases[fase], style: T.cuerpo.copyWith(color: Colors.white, fontSize: 17)),
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: Esp.x3),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(8),
                         child: LinearProgressIndicator(
@@ -171,6 +215,9 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
                           color: C.verdeMenta,
                         ),
                       ),
+                      const SizedBox(height: Esp.x3),
+                      // Pista para saltar la carga, que aparece después de un momento.
+                      Text('Toca para entrar', style: T.apoyo.copyWith(color: Colors.white.withValues(alpha: .7 * Curves.easeOut.transform(((t - .15) / .2).clamp(0.0, 1.0))))),
                     ]),
                   );
                 },
@@ -187,11 +234,13 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
 }
 
 class _Escena extends StatelessWidget {
-  const _Escena({required this.t});
+  const _Escena({required this.t, required this.completa});
   final double t;
+  final bool completa;
 
   @override
   Widget build(BuildContext context) {
+    if (!completa) return _LogoBreve(t: t);
     // Fase 1 (0 → .72): caen los productos. Fase 2 (.70 → .86): la canasta se funde con el logo.
     final transicion = Curves.easeInOutCubic.transform(((t - .70) / .16).clamp(0.0, 1.0));
     final logo = Curves.elasticOut.transform(((t - .76) / .22).clamp(0.0, 1.0));
@@ -199,7 +248,7 @@ class _Escena extends StatelessWidget {
     // Pequeño "golpecito" de la canasta cada vez que cae un producto.
     var golpe = 0.0;
     for (final it in _items) {
-      final aterriza = it.inicio + .16;
+      final aterriza = it.inicio + .20;
       final d = t - aterriza;
       if (d >= 0 && d < .07) golpe += math.sin(d / .07 * math.pi);
     }
@@ -218,7 +267,8 @@ class _Escena extends StatelessWidget {
             child: SizedBox(
               width: 260,
               height: 260,
-              child: Stack(children: [
+              // Sin recorte: los íconos nacen por encima de la canasta y no deben cortarse en el borde de la escena.
+              child: Stack(clipBehavior: Clip.none, children: [
                 const Positioned.fill(child: CustomPaint(painter: _CanastaTrasera())),
                 for (final it in _items) _ProductoCayendo(item: it, t: t),
                 const Positioned.fill(child: CustomPaint(painter: _CanastaFrontal())),
@@ -243,7 +293,7 @@ class _Escena extends StatelessWidget {
                 ],
               ),
               child: ClipOval(
-                child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover, semanticLabel: 'Logo de Comercial Sedyjo'),
+                child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover, cacheWidth: 520, semanticLabel: 'Logo de Comercial Sedyjo'),
               ),
             ),
           ),
@@ -252,6 +302,40 @@ class _Escena extends StatelessWidget {
   }
 }
 
+/// Versión breve (aperturas siguientes): el logo aparece con un asentamiento suave, sin canasta.
+class _LogoBreve extends StatelessWidget {
+  const _LogoBreve({required this.t});
+  final double t;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = Curves.easeOutBack.transform((t / .45).clamp(0.0, 1.0));
+    return Center(
+      child: Stack(alignment: Alignment.center, children: [
+        CustomPaint(size: const Size.square(320), painter: _Estallido((t / .5).clamp(0.0, 1.0))),
+        Opacity(
+        opacity: (t / .25).clamp(0.0, 1.0),
+        child: Transform.scale(
+          scale: .55 + .45 * p,
+          child: Container(
+            width: 236,
+            height: 236,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .35), blurRadius: 30, offset: const Offset(0, 14))],
+            ),
+            child: ClipOval(child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover, cacheWidth: 520, semanticLabel: 'Logo de Comercial Sedyjo')),
+          ),
+        ),
+      ),
+      ]),
+    );
+  }
+}
+
+/// Un producto que nace de una burbuja "al revés": en un punto sobre la canasta ocurre el estallido (un aro que se
+/// expande y gotitas que salen disparadas) y del centro emerge el ícono, envuelto en una burbuja transparente que se
+/// va disolviendo mientras cae suavemente hasta la canasta.
 class _ProductoCayendo extends StatelessWidget {
   const _ProductoCayendo({required this.item, required this.t});
   final _Item item;
@@ -259,35 +343,98 @@ class _ProductoCayendo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final p = ((t - item.inicio) / .16).clamp(0.0, 1.0);
+    final p = ((t - item.inicio) / .20).clamp(0.0, 1.0);
     if (p == 0) return const SizedBox();
-    final caida = Curves.easeInQuad.transform(p);
     const alto = 64.0;
-    final y = -90 + (item.y - alto / 2 + 90) * caida;
-    // Pequeño rebote al final: sube unos px y vuelve.
-    final rebote = p >= 1 ? 0.0 : 0.0;
-    final opacidad = (p * 5).clamp(0.0, 1.0);
+    // El ícono emerge del estallido (0 → .28) y recién ahí empieza a caer.
+    final emerge = Curves.easeOutBack.transform((p / .30).clamp(0.0, 1.0));
+    final caida = Curves.easeInOutSine.transform(((p - .10) / .90).clamp(0.0, 1.0));
+    const yNacer = -52.0;
+    final yFin = item.y - alto / 2;
+    final y = yNacer + (yFin - yNacer) * caida;
+    // Nace más cerca del centro y se desliza hacia su lugar final.
+    final x = item.x * (.35 + .65 * caida);
+    // La burbuja que envuelve al ícono se disuelve entre .30 y .62.
+    final membrana = 1 - Curves.easeIn.transform(((p - .30) / .32).clamp(0.0, 1.0));
+    // Un balanceo suave mientras cae.
+    final giro = item.giro * Curves.easeOut.transform(p) + math.sin(p * math.pi * 2) * .08 * (1 - p);
+    const caja = 140.0;
     return Positioned(
-      left: 130 + item.x - alto / 2,
-      top: y + rebote,
-      child: Opacity(
-        opacity: opacidad,
-        child: Transform.rotate(
-          angle: item.giro * Curves.easeOut.transform(p) + (1 - p) * .5,
-          child: Container(
-            width: alto,
-            height: alto,
-            decoration: BoxDecoration(
-              color: item.fondo,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 8, offset: const Offset(0, 4))],
+      left: 130 + x - caja / 2,
+      top: y + alto / 2 - caja / 2,
+      child: SizedBox(
+        width: caja,
+        height: caja,
+        child: Stack(alignment: Alignment.center, children: [
+          CustomPaint(size: const Size.square(caja), painter: _Estallido(p)),
+          if (membrana > 0)
+            Transform.scale(
+              scale: .55 + .45 * Curves.easeOut.transform((p / .35).clamp(0.0, 1.0)),
+              child: Container(
+                width: 92,
+                height: 92,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    center: const Alignment(-.35, -.4),
+                    colors: [Colors.white.withValues(alpha: .34 * membrana), Colors.white.withValues(alpha: .06 * membrana)],
+                  ),
+                  border: Border.all(color: Colors.white.withValues(alpha: .55 * membrana), width: 1.5),
+                ),
+              ),
             ),
-            child: Icon(item.icono, size: 36, color: item.color),
+          Transform.rotate(
+            angle: giro,
+            child: Transform.scale(
+              scale: emerge,
+              child: Container(
+                width: alto,
+                height: alto,
+                decoration: BoxDecoration(
+                  color: item.fondo,
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: .18), blurRadius: 8, offset: const Offset(0, 4))],
+                ),
+                child: Icon(item.icono, size: 36, color: item.color),
+              ),
+            ),
           ),
-        ),
+        ]),
       ),
     );
   }
+}
+
+/// El estallido que da origen a la burbuja: un aro que se expande y desvanece, y seis gotitas que salen disparadas.
+/// Dura el primer tercio de la aparición ([p] va de 0 a 1 en toda ella).
+class _Estallido extends CustomPainter {
+  const _Estallido(this.p);
+  final double p;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final e = (p / .38).clamp(0.0, 1.0);
+    if (e >= 1) return;
+    final c = size.center(Offset.zero);
+    final salida = Curves.easeOutCubic.transform(e);
+    final alfa = 1 - Curves.easeIn.transform(e);
+    canvas.drawCircle(
+      c,
+      10 + 46 * salida,
+      Paint()
+        ..color = Colors.white.withValues(alpha: .75 * alfa)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.2 * (1 - e) + .8,
+    );
+    for (var k = 0; k < 6; k++) {
+      final ang = (k * 60 + 18) * math.pi / 180;
+      final d = 18 + 38 * salida;
+      canvas.drawCircle(c + Offset(math.cos(ang), math.sin(ang)) * d, 4.2 * (1 - e) + 1, Paint()..color = Colors.white.withValues(alpha: .85 * alfa));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _Estallido old) => old.p != p;
 }
 
 const _mimbre = Color(0xFFE3B66B);
@@ -389,7 +536,7 @@ class _Burbujas extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: animacion,
-      builder: (_, __) => CustomPaint(painter: _PintorBurbujas(animacion.value)),
+      builder: (_, _) => CustomPaint(painter: _PintorBurbujas(animacion.value)),
     );
   }
 }

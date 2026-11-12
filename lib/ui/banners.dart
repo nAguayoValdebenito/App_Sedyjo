@@ -6,6 +6,7 @@ import '../app/tema.dart';
 import '../pantallas/auth.dart';
 import '../pantallas/direccion.dart';
 import '../pantallas/shell.dart';
+import '../pantallas/tienda.dart';
 import 'componentes.dart';
 
 /// Banner de campaña sobre negro: título en dorado o morado, texto real (nunca dentro de la imagen).
@@ -52,7 +53,7 @@ class BannerPromo extends StatelessWidget {
             radius: .9,
             colors: [Color.alphaBlend(acento.withValues(alpha: .28), C.negro), C.negro],
           ),
-          borderRadius: BorderRadius.circular(26),
+          borderRadius: BorderRadius.circular(R.l),
           border: Border.all(color: acento.withValues(alpha: .55), width: 1.5),
         ),
         // Texto a la izquierda y producto a la derecha en una fila: el alto lo decide el texto,
@@ -60,22 +61,22 @@ class BannerPromo extends StatelessWidget {
         child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 16, 4, 16),
+              padding: const EdgeInsets.fromLTRB(Esp.x4, Esp.x4, Esp.x1, Esp.x4),
               child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(titulo, style: T.titulo3.copyWith(color: acento, fontSize: 22, height: 1.1)),
-                const SizedBox(height: 4),
+                const SizedBox(height: Esp.x1),
                 Text(subtitulo, style: T.apoyo.copyWith(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)),
                 if (precio != null) ...[
-                  const SizedBox(height: 6),
+                  const SizedBox(height: Esp.x2),
                   Text(precio!, style: T.precio.copyWith(color: Colors.white, fontSize: 20)),
-                  if (descuento != null) Padding(padding: const EdgeInsets.only(top: 4), child: Insignia('-$descuento%')),
+                  if (descuento != null) Padding(padding: const EdgeInsets.only(top: Esp.x1), child: Insignia('-$descuento%')),
                 ],
-                const SizedBox(height: 12),
+                const SizedBox(height: Esp.x3),
                 Container(
                   constraints: const BoxConstraints(minHeight: 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: Esp.x2),
                   alignment: Alignment.center,
-                  decoration: BoxDecoration(color: acento, borderRadius: BorderRadius.circular(14)),
+                  decoration: BoxDecoration(color: acento, borderRadius: BorderRadius.circular(R.s)),
                   child: Text(boton, textAlign: TextAlign.center, style: T.boton.copyWith(color: C.negro, fontSize: 16)),
                 ),
               ]),
@@ -84,8 +85,8 @@ class BannerPromo extends StatelessWidget {
           SizedBox(
             width: 124,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(0, 8, 8, 8),
-              child: Image.asset(imagen, fit: BoxFit.contain, alignment: Alignment.center, semanticLabel: ''),
+              padding: const EdgeInsets.fromLTRB(0, Esp.x2, Esp.x2, Esp.x2),
+              child: Image.asset(imagen, fit: BoxFit.contain, alignment: Alignment.center, cacheWidth: 360, semanticLabel: ''),
             ),
           ),
         ]),
@@ -119,14 +120,14 @@ class IdeaMesa extends StatelessWidget {
       onTap: alTocar,
       child: Container(
         width: 210,
-        decoration: BoxDecoration(color: fondo, borderRadius: BorderRadius.circular(24)),
+        decoration: BoxDecoration(color: fondo, borderRadius: BorderRadius.circular(R.l)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+            padding: const EdgeInsets.fromLTRB(Esp.x3, Esp.x3, Esp.x3, 0),
             child: AspectRatio(aspectRatio: 1.45, child: Image.asset(imagen, fit: BoxFit.contain, cacheWidth: 520, semanticLabel: '')),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 8, 12, 14),
+            padding: const EdgeInsets.fromLTRB(Esp.x3, Esp.x2, Esp.x3, Esp.x3),
             child: Row(children: [
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -138,7 +139,7 @@ class IdeaMesa extends StatelessWidget {
                 width: 40,
                 height: 40,
                 decoration: BoxDecoration(color: C.superficie, shape: BoxShape.circle),
-                child: Icon(LucideIcons.chevronRight, size: 22, color: C.verdeOscuro),
+                child: Icon(LucideIcons.chevronRight, size: Ico.m, color: C.verdeOscuro),
               ),
             ]),
           ),
@@ -158,7 +159,7 @@ class IconoEstado extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: ExcludeSemantics(
-        child: Image.asset('assets/img/estados2/$nombre${C.oscuro ? '-oscuro' : ''}.webp', width: lado, height: lado, fit: BoxFit.contain),
+        child: Flota(child: Image.asset('assets/img/estados2/$nombre${C.oscuro ? '-oscuro' : ''}.webp', width: lado, height: lado, cacheWidth: 600, fit: BoxFit.contain)),
       ),
     );
   }
@@ -180,17 +181,17 @@ class PantallaEstado extends StatelessWidget {
         child: Column(children: [
           if (atras) const BarraSuperior(''),
           Expanded(
-            child: ListView(padding: const EdgeInsets.fromLTRB(28, 24, 28, 16), children: [
+            child: ListView(padding: const EdgeInsets.fromLTRB(Esp.x8, Esp.x6, Esp.x8, Esp.x4), children: [
               IconoEstado(icono, lado: 200),
-              const SizedBox(height: 24),
+              const SizedBox(height: Esp.x6),
               Semantics(header: true, child: Text(titulo, textAlign: TextAlign.center, style: T.titulo1)),
-              const SizedBox(height: 10),
+              const SizedBox(height: Esp.x3),
               Text(texto, textAlign: TextAlign.center, style: T.cuerpo.copyWith(color: C.grisMedio)),
             ]),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 8, 24, 20),
-            child: Column(children: [for (var i = 0; i < acciones.length; i++) ...[if (i > 0) const SizedBox(height: 10), acciones[i]]]),
+            padding: const EdgeInsets.fromLTRB(Esp.x6, Esp.x2, Esp.x6, Esp.x5),
+            child: Column(children: [for (var i = 0; i < acciones.length; i++) ...[if (i > 0) const SizedBox(height: Esp.x3), acciones[i]]]),
           ),
         ]),
       ),
@@ -245,7 +246,7 @@ class FueraDeZonaPantalla extends StatelessWidget {
   Widget build(BuildContext context) => PantallaEstado(
         icono: 'fuera-zona-despacho',
         titulo: 'Aún no llegamos a esa dirección',
-        texto: 'No pudimos confirmar el despacho a esa dirección. Puedes elegir otra dirección o consultarnos por teléfono.',
+        texto: 'No pudimos confirmar el despacho a esa dirección. Puedes elegir otra dirección, retirar tu compra en nuestra tienda o consultarnos por teléfono.',
         acciones: [
           Boton('Elegir otra dirección', icono: LucideIcons.mapPin, onTap: () {
             if (vieneDeElegir) {
@@ -254,6 +255,7 @@ class FueraDeZonaPantalla extends StatelessWidget {
               Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => const ElegirDireccionPantalla()));
             }
           }),
+          Boton('Retirar en nuestra tienda', estilo: EstiloBoton.suave, icono: LucideIcons.store, onTap: () => irA(context, const TiendaPantalla())),
           Boton('Consultar por teléfono', estilo: EstiloBoton.contorno, icono: LucideIcons.phone, onTap: () => mostrarContacto(context)),
         ],
       );

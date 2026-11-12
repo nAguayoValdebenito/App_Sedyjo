@@ -6,10 +6,16 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../app/datos.dart';
 import '../app/tema.dart';
 import '../ui/banners.dart';
+import '../ui/carga.dart';
 import '../ui/componentes.dart';
+import '../ui/sugerencia_buscador.dart';
 import 'avisos.dart';
 import 'categorias.dart';
+import 'direccion.dart' show mostrarContacto;
+import 'tienda.dart';
 import 'producto.dart';
+
+part 'inicio_secciones.dart';
 
 void abrirProducto(BuildContext context, Producto p) => irA(context, ProductoPantalla(p));
 
@@ -18,84 +24,110 @@ class InicioPestana extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ofertas = Catalogo.enOferta();
-    final recomendados = Catalogo.productos.where((p) => !p.enOferta && p.imagen != null).take(4).toList();
     return SafeArea(
       bottom: false,
-      child: ListView(
-        padding: const EdgeInsets.only(bottom: 32),
-        children: [
-          const _Cabecera(),
-          const _Saludo(),
-          const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 0), child: _CajaBusqueda()),
-          const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 0), child: BarraDespacho(compacta: true)),
-          const SizedBox(height: 16),
-          const _CarruselPrincipal(),
-          TituloSeccion('Ofertas de la semana', accion: 'Ver todas', alAccion: () => estado.irAPestana(2)),
-          FilaHorizontal(hijos: [for (final p in ofertas) SizedBox(width: 188, child: TarjetaProducto(p, abrir: () => abrirProducto(context, p)))]),
-          const TituloSeccion('Destacados de hoy'),
-          TiraPromos(banners: [
-            BannerPromo(
-              titulo: 'Oferta del día',
-              subtitulo: Catalogo.porId(4).nombre,
-              imagen: 'assets/img/oferta/crush.webp',
-              precio: clp(Catalogo.porId(4).precioFinal),
-              descuento: Catalogo.porId(4).descuento,
-              boton: 'Aprovechar',
-              alTocar: () => abrirProducto(context, Catalogo.porId(4)),
+      child: Refrescar(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: Esp.x8),
+          children: [
+            const _Cabecera(),
+            const _Saludo(),
+            const _ConsejoInicio(),
+            const Padding(padding: EdgeInsets.fromLTRB(Esp.x5, Esp.x4, Esp.x5, 0), child: _CajaBusqueda()),
+            const Padding(padding: EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x5, 0), child: BarraDespacho(compacta: true)),
+            const SizedBox(height: Esp.x4),
+            const _CarruselPrincipal(),
+            TituloSeccion('Ofertas de la semana', accion: 'Ver todas', alAccion: () => estado.irAPestana(2)),
+            SeccionCarga(
+              cargando: (_) => const EsqueletoFila(),
+              listo: (_) => FilaHorizontal(hijos: [for (final p in Catalogo.enOferta()) SizedBox(width: 188, child: TarjetaProducto(p))]),
             ),
-            BannerPromo(
-              titulo: 'Dulce oferta',
-              subtitulo: Catalogo.porId(12).nombre,
-              imagen: 'assets/img/oferta/mecano.webp',
-              acento: C.morado,
-              precio: clp(Catalogo.porId(12).precioFinal),
-              descuento: Catalogo.porId(12).descuento,
-              boton: 'Lo quiero',
-              alTocar: () => abrirProducto(context, Catalogo.porId(12)),
+            const TituloSeccion('Destacados de hoy'),
+            SeccionCarga(
+              cargando: (_) => const EsqueletoFila(n: 2),
+              listo: (_) => const _Destacados(),
             ),
-            BannerPromo(
-              titulo: 'Para refrescarte',
-              subtitulo: Catalogo.porId(2).nombre,
-              imagen: 'assets/img/oferta/cola.webp',
-              precio: clp(Catalogo.porId(2).precioFinal),
-              descuento: Catalogo.porId(2).descuento,
-              boton: 'Ver oferta',
-              alTocar: () => abrirProducto(context, Catalogo.porId(2)),
+            TituloSeccion('Categorías', accion: 'Ver todas', alAccion: () => estado.irAPestana(1)),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: Esp.x5), child: _GrillaCategorias()),
+            const TituloSeccion('Ideas para tu mesa'),
+            FilaHorizontal(hijos: [
+              IdeaMesa(titulo: 'Para el desayuno', sub: 'Mermeladas y más', imagen: 'assets/img/combos/desayuno.webp', fondo: fondoCategoria('Abarrotes'), alTocar: () => irA(context, const CategoriaPantalla('Abarrotes'))),
+              IdeaMesa(titulo: 'La once', sub: 'Té y galletas', imagen: 'assets/img/combos/once.webp', fondo: fondoCategoria('Té e Infusiones'), alTocar: () => irA(context, const CategoriaPantalla('Té e Infusiones'))),
+              IdeaMesa(titulo: 'Para compartir', sub: 'Bebidas y snacks', imagen: 'assets/img/combos/bebidas-snacks.webp', fondo: fondoCategoria('Bebidas'), alTocar: () => irA(context, const CategoriaPantalla('Bebidas'))),
+            ]),
+            const SizedBox(height: Esp.x2),
+            SeccionCarga(
+              cargando: (_) => const SizedBox.shrink(),
+              listo: (_) => const Revelar(child: _SeccionExclusivo()),
             ),
-            BannerPromo(
-              titulo: 'Prepara tu Navidad',
-              subtitulo: 'Ofertas para tu mesa de fiestas',
-              imagen: 'assets/img/campanas/navidad.webp',
-              acento: C.morado,
-              boton: 'Ver ofertas',
-              alTocar: () => estado.irAPestana(2),
+            const TituloSeccion('Recomendados para ti'),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Esp.x5),
+              child: SeccionCarga(
+                cargando: (_) => const EsqueletoGrilla(n: 4),
+                listo: (_) => GrillaProductos(Catalogo.productos.where((p) => !p.enOferta && p.imagen != null).take(4).toList()),
+              ),
             ),
-          ]),
-          TituloSeccion('Categorías', accion: 'Ver todas', alAccion: () => estado.irAPestana(1)),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: _GrillaCategorias()),
-          const TituloSeccion('Ideas para tu mesa'),
-          FilaHorizontal(hijos: [
-            IdeaMesa(titulo: 'Para el desayuno', sub: 'Mermeladas y más', imagen: 'assets/img/combos/desayuno.webp', fondo: fondoCategoria('Abarrotes'), alTocar: () => irA(context, const CategoriaPantalla('Abarrotes'))),
-            IdeaMesa(titulo: 'La once', sub: 'Té y galletas', imagen: 'assets/img/combos/once.webp', fondo: fondoCategoria('Té e Infusiones'), alTocar: () => irA(context, const CategoriaPantalla('Té e Infusiones'))),
-            IdeaMesa(titulo: 'Para compartir', sub: 'Bebidas y snacks', imagen: 'assets/img/combos/bebidas-snacks.webp', fondo: fondoCategoria('Bebidas'), alTocar: () => irA(context, const CategoriaPantalla('Bebidas'))),
-          ]),
-          const SizedBox(height: 8),
-          const _SeccionExclusivo(),
-          const TituloSeccion('Recomendados para ti'),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: GrillaProductos(recomendados, abrir: (p) => abrirProducto(context, p)),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Boton('Ver todo el catálogo', estilo: EstiloBoton.contorno, icono: LucideIcons.layoutGrid, onTap: () => irA(context, const CategoriaPantalla(null))),
-          ),
-          const Padding(padding: EdgeInsets.fromLTRB(20, 22, 20, 0), child: _Beneficios()),
-          const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 0), child: _AyudaTarjeta()),
-        ],
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Esp.x5),
+              child: Boton('Ver todo el catálogo', estilo: EstiloBoton.contorno, icono: LucideIcons.layoutGrid, onTap: () => irA(context, const CategoriaPantalla(null))),
+            ),
+            const Padding(padding: EdgeInsets.fromLTRB(Esp.x5, Esp.x6, Esp.x5, 0), child: Revelar(child: _Beneficios())),
+            const Padding(padding: EdgeInsets.fromLTRB(Esp.x5, Esp.x4, Esp.x5, 0), child: Revelar(child: _AyudaTarjeta())),
+          ],
+        ),
       ),
     );
+  }
+}
+
+/// Banners de campaña sobre negro. Cada producto aparece una sola vez en la portada: la oferta del día vive en Ofertas.
+class _Destacados extends StatelessWidget {
+  const _Destacados();
+
+  @override
+  Widget build(BuildContext context) {
+    final spaghetti = Catalogo.porId(32);
+    final mecano = Catalogo.porId(12);
+    final cola = Catalogo.porId(2);
+    return TiraPromos(banners: [
+      BannerPromo(
+        titulo: 'Para tu almuerzo',
+        subtitulo: spaghetti.nombre,
+        imagen: 'assets/img/oferta/spaghetti.webp',
+        precio: clp(spaghetti.precioFinal),
+        descuento: spaghetti.descuento,
+        boton: 'Aprovechar',
+        alTocar: () => abrirProducto(context, spaghetti),
+      ),
+      BannerPromo(
+        titulo: 'Dulce oferta',
+        subtitulo: mecano.nombre,
+        imagen: 'assets/img/oferta/mecano.webp',
+        acento: C.morado,
+        precio: clp(mecano.precioFinal),
+        descuento: mecano.descuento,
+        boton: 'Lo quiero',
+        alTocar: () => abrirProducto(context, mecano),
+      ),
+      BannerPromo(
+        titulo: 'Para refrescarte',
+        subtitulo: cola.nombre,
+        imagen: 'assets/img/oferta/cola.webp',
+        precio: clp(cola.precioFinal),
+        descuento: cola.descuento,
+        boton: 'Ver oferta',
+        alTocar: () => abrirProducto(context, cola),
+      ),
+      BannerPromo(
+        titulo: 'Prepara tu Navidad',
+        subtitulo: 'Ofertas para tu mesa de fiestas',
+        imagen: 'assets/img/campanas/navidad.webp',
+        acento: C.morado,
+        boton: 'Ver ofertas',
+        alTocar: () => estado.irAPestana(2),
+      ),
+    ]);
   }
 }
 
@@ -115,15 +147,15 @@ class _Saludo extends StatelessWidget {
             ? 'Tu cuenta está lista. Aquí verás tus pedidos y direcciones.'
             : 'Tus pedidos y direcciones están guardados. ¡Buenas compras!';
         return Padding(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+          padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x5, 0),
           child: Semantics(
             liveRegion: true,
             child: Container(
-              padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-              decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(20), border: Border.all(color: C.verde, width: 1.5)),
+              padding: const EdgeInsets.fromLTRB(Esp.x4, Esp.x3, Esp.x2, Esp.x3),
+              decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(R.l), border: Border.all(color: C.verde, width: 1.5)),
               child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Icon(LucideIcons.handHelping, color: C.verdeOscuro, size: 28),
-                const SizedBox(width: 12),
+                Icon(LucideIcons.handHelping, color: C.verdeOscuro, size: Ico.l),
+                const SizedBox(width: Esp.x3),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(titulo, style: T.cuerpoFuerte.copyWith(color: C.verdeProfundo)),
@@ -149,24 +181,24 @@ class _Cabecera extends StatelessWidget {
     return ListenableBuilder(
       listenable: estado,
       builder: (context, _) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 14, 0),
+        padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x3, 0),
         child: Row(children: [
           Container(
             width: 52,
             height: 52,
             decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: C.borde, width: 1.5)),
-            child: ClipOval(child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover, semanticLabel: 'Comercial Sedyjo')),
+            child: ClipOval(child: Image.asset('assets/img/logo.webp', cacheWidth: 260, fit: BoxFit.cover, semanticLabel: 'Comercial Sedyjo')),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: Esp.x3),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(estado.conSesion ? 'Hola, ${estado.nombre!.split(' ').first}' : '¡Hola! ¿Qué necesitas hoy?',
-                  style: T.titulo3.copyWith(fontSize: 20), maxLines: 2),
+                  style: T.titulo3, maxLines: 2),
               const SizedBox(height: 3),
               Row(children: [
                 const Icon(LucideIcons.mapPin, size: 16, color: C.verde),
-                const SizedBox(width: 4),
-                Flexible(child: Text('Despacho a domicilio', style: T.apoyo.copyWith(fontSize: 15), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                const SizedBox(width: Esp.x1),
+                Flexible(child: Text('Despacho a domicilio', style: T.apoyo, maxLines: 1, overflow: TextOverflow.ellipsis)),
               ]),
             ]),
           ),
@@ -202,16 +234,16 @@ class _CajaBusqueda extends StatelessWidget {
       onTap: () => irA(context, const BuscarPantalla()),
       child: Container(
         height: 60,
-        padding: const EdgeInsets.symmetric(horizontal: 18),
+        padding: const EdgeInsets.symmetric(horizontal: Esp.x4),
         decoration: BoxDecoration(
-          color: C.superficie,
-          borderRadius: BorderRadius.circular(18),
+          color: C.oscuro ? C.grisFondo : C.superficie,
+          borderRadius: BorderRadius.circular(R.m),
           border: Border.all(color: C.bordeControl, width: 1.5),
         ),
         child: Row(children: [
-          const Icon(LucideIcons.search, size: 24, color: C.verde),
-          const SizedBox(width: 12),
-          Expanded(child: Text('Buscar arroz, bebidas, galletas…', style: T.cuerpo.copyWith(color: C.grisTexto, fontSize: 17), maxLines: 1, overflow: TextOverflow.ellipsis)),
+          const Icon(LucideIcons.search, size: Ico.m, color: C.verde),
+          const SizedBox(width: Esp.x3),
+          const Expanded(child: SugerenciaBuscador()),
         ]),
       ),
     );
@@ -242,7 +274,8 @@ class _CarruselPrincipal extends StatefulWidget {
 }
 
 class _CarruselPrincipalState extends State<_CarruselPrincipal> {
-  final _ctl = PageController(viewportFraction: .92);
+  PageController _ctl = PageController(viewportFraction: .92);
+  double _fraccion = .92;
   int _i = 0;
   Timer? _t;
   bool _pausa = false;
@@ -251,7 +284,7 @@ class _CarruselPrincipalState extends State<_CarruselPrincipal> {
   void initState() {
     super.initState();
     _t = Timer.periodic(const Duration(seconds: 7), (_) {
-      if (!mounted || !_ctl.hasClients || _pausa || sinMovimiento(context)) return;
+      if (!mounted || !_ctl.hasClients || _pausa || sinMovimiento(context) || !TickerMode.valuesOf(context).enabled) return;
       _ctl.animateToPage((_i + 1) % _slides.length, duration: const Duration(milliseconds: 500), curve: Curves.easeOutCubic);
     });
   }
@@ -266,6 +299,14 @@ class _CarruselPrincipalState extends State<_CarruselPrincipal> {
   @override
   Widget build(BuildContext context) {
     final escala = MediaQuery.textScalerOf(context).scale(10) / 10;
+    // En pantallas anchas se asoma más de un banner a la vez.
+    final fraccion = MediaQuery.sizeOf(context).width >= 720 ? .55 : .92;
+    if (fraccion != _fraccion) {
+      _fraccion = fraccion;
+      final pagina = _i;
+      _ctl.dispose();
+      _ctl = PageController(viewportFraction: fraccion, initialPage: pagina);
+    }
     return Column(children: [
       SizedBox(
         height: 222 + (escala - 1) * 230,
@@ -281,44 +322,43 @@ class _CarruselPrincipalState extends State<_CarruselPrincipal> {
           onPageChanged: (v) => setState(() => _i = v),
           itemBuilder: (context, i) {
             final s = _slides[i];
+            final grande = escala > 1.15;
             return Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6),
+              padding: const EdgeInsets.symmetric(horizontal: Esp.x2),
               child: Container(
                 clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(color: s.fondo, borderRadius: BorderRadius.circular(26)),
-                child: Stack(children: [
-                  Positioned(right: -6, bottom: 4, child: Image.asset('assets/img/${s.imagen}', width: escala > 1.15 ? 130 : 215, height: escala > 1.15 ? 78 : 180, fit: BoxFit.contain, alignment: Alignment.bottomRight, semanticLabel: '')),
-                  // Un velo del mismo color del banner deja el texto siempre legible sobre la foto.
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(colors: [s.fondo, s.fondo, s.fondo.withValues(alpha: 0)], stops: const [0, .40, .62]),
-                      ),
+                decoration: BoxDecoration(color: s.fondo, borderRadius: BorderRadius.circular(R.l)),
+                // Texto y foto en cajas separadas: nunca se pisan, ni con letra grande.
+                child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x5, Esp.x1, Esp.x4),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                        Text(s.titulo, style: T.titulo2.copyWith(color: Colors.white), maxLines: 3),
+                        const SizedBox(height: Esp.x2),
+                        Text(s.sub, style: T.apoyo.copyWith(color: Colors.white, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
+                        const Spacer(),
+                        Tocable(
+                          etiqueta: s.cta,
+                          onTap: () => irA(context, CategoriaPantalla(s.categoria)),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: Esp.x4, vertical: Esp.x3),
+                            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(R.s)),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Flexible(child: Text(s.cta, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.boton.copyWith(color: C.verdeBanner, fontSize: 16))),
+                              const SizedBox(width: Esp.x2),
+                              const Icon(LucideIcons.chevronRight, size: Ico.s, color: C.verdeBanner),
+                            ]),
+                          ),
+                        ),
+                      ]),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 0, 18),
-                    child: SizedBox(
-                      width: escala > 1.15 ? 290 : 185,
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(s.titulo, style: T.titulo2.copyWith(color: Colors.white, fontSize: 24), maxLines: 3),
-                      const SizedBox(height: 6),
-                      Text(s.sub, style: T.apoyo.copyWith(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600), maxLines: 2, overflow: TextOverflow.ellipsis),
-                      const Spacer(),
-                      Tocable(
-                        etiqueta: s.cta,
-                        onTap: () => irA(context, CategoriaPantalla(s.categoria)),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Flexible(child: Text(s.cta, maxLines: 1, overflow: TextOverflow.ellipsis, style: T.boton.copyWith(color: C.verdeBanner, fontSize: 16))),
-                            const SizedBox(width: 6),
-                            const Icon(LucideIcons.chevronRight, size: 20, color: C.verdeBanner),
-                          ]),
-                        ),
-                      ),
-                    ]),
+                  SizedBox(
+                    width: grande ? 96 : 120,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(0, Esp.x3, Esp.x3, Esp.x3),
+                      child: Image.asset('assets/img/${s.imagen}', fit: BoxFit.contain, alignment: Alignment.center, cacheWidth: 420, semanticLabel: ''),
                     ),
                   ),
                 ]),
@@ -349,16 +389,6 @@ class _CarruselPrincipalState extends State<_CarruselPrincipal> {
               ),
             ),
           ),
-        const SizedBox(width: 4),
-        Tocable(
-          etiqueta: _pausa ? 'Reanudar el cambio automático de banners' : 'Pausar el cambio automático de banners',
-          onTap: () => setState(() => _pausa = !_pausa),
-          child: SizedBox(
-            width: 48,
-            height: 48,
-            child: Icon(_pausa ? LucideIcons.play : LucideIcons.pause, size: 22, color: C.grisMedio),
-          ),
-        ),
       ]),
     ]);
   }
@@ -371,20 +401,25 @@ class _GrillaCategorias extends StatelessWidget {
       for (final c in categorias) _TileCategoria(c),
       const _TileTodas(),
     ];
-    final filas = <Widget>[];
-    for (var i = 0; i < tiles.length; i += 2) {
-      filas.add(Padding(
-        padding: const EdgeInsets.only(bottom: 14),
-        child: IntrinsicHeight(
-          child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Expanded(child: tiles[i]),
-            const SizedBox(width: 14),
-            Expanded(child: i + 1 < tiles.length ? tiles[i + 1] : const SizedBox()),
-          ]),
-        ),
-      ));
-    }
-    return Column(children: filas);
+    // 2 columnas en teléfono; 3 o 4 en tableta o con el teléfono acostado.
+    return LayoutBuilder(builder: (context, caja) {
+      final cols = (caja.maxWidth / 220).floor().clamp(2, 4);
+      final filas = <Widget>[];
+      for (var i = 0; i < tiles.length; i += cols) {
+        filas.add(Padding(
+          padding: const EdgeInsets.only(bottom: Esp.x3),
+          child: IntrinsicHeight(
+            child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              for (var k = 0; k < cols; k++) ...[
+                if (k > 0) const SizedBox(width: Esp.x3),
+                Expanded(child: i + k < tiles.length ? Revelar(indice: k, child: tiles[i + k]) : const SizedBox()),
+              ],
+            ]),
+          ),
+        ));
+      }
+      return Column(children: filas);
+    });
   }
 }
 
@@ -399,18 +434,18 @@ class _TileCategoria extends StatelessWidget {
       etiqueta: '${c.nombre}, $n productos',
       onTap: () => irA(context, CategoriaPantalla(c.nombre)),
       child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: c.color, borderRadius: BorderRadius.circular(22)),
+        padding: const EdgeInsets.all(Esp.x3),
+        decoration: BoxDecoration(color: c.color, borderRadius: BorderRadius.circular(R.l)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           AspectRatio(aspectRatio: 1.7, child: Image.asset(c.ruta, fit: BoxFit.contain, cacheWidth: 400, semanticLabel: '')),
           Padding(
-            padding: const EdgeInsets.fromLTRB(4, 12, 4, 4),
+            padding: const EdgeInsets.fromLTRB(Esp.x1, Esp.x3, Esp.x1, Esp.x1),
             child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(c.icono, size: 22, color: C.tinta.withValues(alpha: .7)),
-              const SizedBox(width: 8),
+              Icon(c.icono, size: Ico.m, color: C.tinta.withValues(alpha: .7)),
+              const SizedBox(width: Esp.x2),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(c.nombre, style: T.cuerpoFuerte.copyWith(fontSize: 17, height: 1.2)),
+                  Text(c.nombre, style: T.cuerpoFuerte.copyWith(height: 1.2)),
                   const SizedBox(height: 2),
                   Text('$n productos', style: T.apoyo.copyWith(color: C.grisMedio, fontSize: 15)),
                 ]),
@@ -432,203 +467,16 @@ class _TileTodas extends StatelessWidget {
       etiqueta: 'Ver todo el catálogo',
       onTap: () => irA(context, const CategoriaPantalla(null)),
       child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: C.verde, borderRadius: BorderRadius.circular(22)),
+        padding: const EdgeInsets.all(Esp.x4),
+        decoration: BoxDecoration(color: C.verde, borderRadius: BorderRadius.circular(R.l)),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Image.asset('assets/img/cat/todo-el-catalogo.webp', height: 88, fit: BoxFit.contain, alignment: Alignment.centerLeft, semanticLabel: ''),
-          const SizedBox(height: 10),
+          Image.asset('assets/img/cat/todo-el-catalogo.webp', cacheHeight: 264, height: 88, fit: BoxFit.contain, alignment: Alignment.centerLeft, semanticLabel: ''),
+          const SizedBox(height: Esp.x3),
           Text('Todo el catálogo', style: T.titulo3.copyWith(color: Colors.white)),
-          const SizedBox(height: 4),
+          const SizedBox(height: Esp.x1),
           Text('${Catalogo.productos.length} productos', style: T.apoyo.copyWith(color: C.verdePalido)),
         ]),
       ),
-    );
-  }
-}
-
-/// "Exclusivo online": único lugar de la interfaz donde viven el dorado y el morado, siempre sobre negro.
-class _SeccionExclusivo extends StatelessWidget {
-  const _SeccionExclusivo();
-
-  @override
-  Widget build(BuildContext context) {
-    final productos = Catalogo.productos.where((p) => p.categoria == 'Galletas y Snacks' || p.categoria == 'Té e Infusiones').take(6).toList();
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 14),
-      padding: const EdgeInsets.only(bottom: 26),
-      color: C.negro,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 28, 20, 4),
-          child: Row(children: [
-            const Icon(LucideIcons.sparkles, color: C.oro, size: 26),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Exclusivo online', style: T.titulo2.copyWith(color: C.oro))),
-          ]),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-          child: Text('Selección que solo encuentras en la app y la web.', style: T.cuerpo.copyWith(color: const Color(0xFFD7D7E0), fontSize: 16)),
-        ),
-        const FilaHorizontal(hijos: [
-          _BannerOscuro('Galletas y snacks', 'Para cada antojo', 'hero/galletas.webp', 'Galletas y Snacks', C.oro),
-          _BannerOscuro('Té e infusiones', 'Una pausa para ti', 'hero/te.webp', 'Té e Infusiones', C.morado),
-        ]),
-        const SizedBox(height: 18),
-        FilaHorizontal(hijos: [for (final p in productos) SizedBox(width: 180, child: _TarjetaOscura(p))]),
-      ]),
-    );
-  }
-}
-
-class _BannerOscuro extends StatelessWidget {
-  const _BannerOscuro(this.titulo, this.sub, this.imagen, this.categoria, this.acento);
-  final String titulo;
-  final String sub;
-  final String imagen;
-  final String categoria;
-  final Color acento;
-
-  @override
-  Widget build(BuildContext context) {
-    return Tocable(
-      etiqueta: '$titulo. $sub',
-      onTap: () => irA(context, CategoriaPantalla(categoria)),
-      child: Container(
-        width: 310,
-        constraints: const BoxConstraints(minHeight: 150),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: C.carbon,
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: acento.withValues(alpha: .55), width: 1.5),
-        ),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 18, 4, 18),
-              child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(titulo, style: T.titulo3.copyWith(color: acento, fontSize: 22)),
-                const SizedBox(height: 4),
-                Text(sub, style: T.apoyo.copyWith(color: Colors.white, fontSize: 15)),
-                const SizedBox(height: 14),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(color: acento, borderRadius: BorderRadius.circular(12)),
-                  child: Text('Comprar', style: T.boton.copyWith(color: C.negro, fontSize: 16)),
-                ),
-              ]),
-            ),
-          ),
-          SizedBox(width: 130, child: Image.asset('assets/img/$imagen', fit: BoxFit.contain, semanticLabel: '')),
-        ]),
-      ),
-    );
-  }
-}
-
-class _TarjetaOscura extends StatelessWidget {
-  const _TarjetaOscura(this.p);
-  final Producto p;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: C.carbon, borderRadius: BorderRadius.circular(20), border: Border.all(color: C.carbonBorde)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Expanded(
-          child: Tocable(
-            etiqueta: 'Ver ${p.nombre}',
-            onTap: () => abrirProducto(context, p),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              AspectRatio(aspectRatio: 1.25, child: FotoProducto(p, fondo: const Color(0xFF22222C))),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(p.nombre, maxLines: 3, overflow: TextOverflow.ellipsis, style: T.cuerpo.copyWith(color: Colors.white, fontSize: 16, height: 1.25, fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 8),
-                  Text(clp(p.precioFinal), style: T.precio.copyWith(color: C.oro)),
-                ]),
-              ),
-            ]),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
-          child: Boton('Agregar', icono: LucideIcons.plus, estilo: EstiloBoton.dorado, alto: 50, onTap: () {
-            estado.agregar(p);
-            avisoAgregado(context, p);
-          }),
-        ),
-      ]),
-    );
-  }
-}
-
-class _Beneficios extends StatelessWidget {
-  const _Beneficios();
-
-  @override
-  Widget build(BuildContext context) {
-    const filas = [
-      (LucideIcons.truck, 'Despacho en 24 a 48 horas', 'Gratis desde \$49.990'),
-      (LucideIcons.shieldCheck, 'Pago seguro con Webpay', 'Tarjeta de débito o crédito'),
-      (LucideIcons.phone, 'Te atendemos por teléfono', 'Llama o escribe por WhatsApp'),
-    ];
-    return Panel(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      child: Column(children: [
-        for (var i = 0; i < filas.length; i++) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(color: C.verdeSuave, shape: BoxShape.circle),
-                child: Icon(filas[i].$1, color: C.verdeOscuro, size: 24),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(filas[i].$2, style: T.cuerpoFuerte.copyWith(fontSize: 17)),
-                  Text(filas[i].$3, style: T.apoyo),
-                ]),
-              ),
-            ]),
-          ),
-          if (i < filas.length - 1) const Divider(height: 1),
-        ],
-      ]),
-    );
-  }
-}
-
-class _AyudaTarjeta extends StatelessWidget {
-  const _AyudaTarjeta();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: C.azul, borderRadius: BorderRadius.circular(24)),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('¿Necesitas ayuda para comprar?', style: T.titulo3.copyWith(color: Colors.white, fontSize: 22)),
-        const SizedBox(height: 6),
-        Text('Te acompañamos paso a paso por teléfono.', style: T.cuerpo.copyWith(color: const Color(0xFFDCE6F5), fontSize: 16)),
-        const SizedBox(height: 16),
-        Container(
-          height: 56,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(LucideIcons.phone, color: C.azulOscuro, size: 22),
-            const SizedBox(width: 10),
-            Text('Llamar $telefonoVisible', style: T.boton.copyWith(color: C.azulOscuro, fontSize: 17)),
-          ]),
-        ),
-      ]),
     );
   }
 }

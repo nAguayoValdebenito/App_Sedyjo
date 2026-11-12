@@ -6,7 +6,8 @@ import '../app/tema.dart';
 import '../ui/componentes.dart';
 import 'auth.dart';
 import 'direccion.dart';
-import 'pedidos.dart';
+import 'pago_resultado.dart';
+import 'tienda.dart';
 
 class CheckoutPantalla extends StatefulWidget {
   const CheckoutPantalla({super.key});
@@ -24,12 +25,16 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
 
   late final _nombre = TextEditingController(text: estado.nombre ?? '');
   late final _correo = TextEditingController(text: estado.correo ?? '');
-  final _telefono = TextEditingController();
+  final _notas = TextEditingController();
+  int _franja = 2;
+  bool _retiro = false;
+  static const _franjas = ['Por la mañana, de 9:00 a 13:00', 'Por la tarde, de 14:00 a 19:00', 'Cualquier horario'];
+  late final _telefono = TextEditingController(text: estado.telefono ?? '');
 
   @override
   void dispose() {
     _scroll.dispose();
-    for (final c in [_nombre, _correo, _telefono]) {
+    for (final c in [_nombre, _correo, _telefono, _notas]) {
       c.dispose();
     }
     super.dispose();
@@ -46,7 +51,7 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
 
   bool get _valido {
     if (_nombre.text.trim().isEmpty || _errCorreo != null || _telefono.text.trim().isEmpty) return false;
-    if (_dir == null) return false;
+    if (!_retiro && _dir == null) return false;
     return true;
   }
 
@@ -57,7 +62,7 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
       if (_nombre.text.trim().isEmpty) 'Tu nombre y apellido',
       if (_errCorreo != null) 'Tu correo, con el formato nombre@correo.cl',
       if (_telefono.text.trim().isEmpty) 'Un teléfono de contacto',
-      if (_dir == null) 'La dirección donde recibirás tu compra',
+      if (!_retiro && _dir == null) 'La dirección donde recibirás tu compra',
     ];
   }
 
@@ -72,20 +77,31 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
 
   void _continuar() {
     setState(() => _intentado = true);
+    if (!_valido) vibracionError();
     if (_valido) {
       setState(() => _paso = 1);
     }
     _subir(); // si falta algo, el resumen de arriba queda a la vista
   }
 
-  Future<void> _pagar() async {
+  Future<void> _pagar({bool forzarRechazo = false}) async {
     setState(() => _pagando = true);
-    await Future.delayed(const Duration(milliseconds: 1600));
-    if (!mounted) return;
     final total = estado.subtotal;
-    final numero = 'SED-${1043 + estado.pedidos.length - 3}';
-    estado.vaciarCarrito();
-    Navigator.of(context).pushReplacement(MaterialPageRoute(builder: (_) => ExitoPantalla(numero: numero, total: total, correo: _correo.text.trim())));
+    final correo = _correo.text.trim();
+    final retiro = _retiro;
+    final direccion = retiro ? tienda.direccionCompleta : '${_dir!.calle}, ${_dir!.comuna}';
+    final franja = retiro ? tienda.plazo : _franjas[_franja];
+    final notas = _notas.text;
+    // La pantalla de resultado confirma el pago con un círculo que gira; solo si se aprueba se crea el pedido.
+    await Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ResultadoPagoPantalla(procesar: () async {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (forzarRechazo || estado.simulacionPago == SimulacionPago.rechazado) return const ResultadoPago.rechazado();
+        final pedido = estado.registrarPedido(correo: correo, direccion: direccion, franja: franja, notas: notas, retiro: retiro);
+        return ResultadoPago.aprobado(numero: pedido.numero, total: total, correo: correo, retiro: retiro);
+      }),
+    ));
+    if (mounted) setState(() => _pagando = false);
   }
 
   @override
@@ -100,16 +116,16 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
           bottom: false,
           child: Column(children: [
             BarraSuperior(_paso == 0 ? 'Tus datos' : 'Pagar', atras: true),
-            Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: _Pasos(_paso)),
+            Padding(padding: const EdgeInsets.fromLTRB(Esp.x5, 0, Esp.x5, Esp.x3), child: _Pasos(_paso)),
             Expanded(
               child: ListView(
                 controller: _scroll,
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x1, Esp.x5, Esp.x6),
                 children: _paso == 0 ? _datos(context) : _pago(context),
               ),
             ),
             Container(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x5, Esp.x3),
               decoration: BoxDecoration(color: C.superficie, border: Border(top: BorderSide(color: C.borde))),
               child: SafeArea(
                 top: false,
@@ -119,7 +135,7 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
                           Text('Total', style: T.apoyo),
                           Text(clp(estado.subtotal), style: T.titulo2),
                         ]),
-                        const SizedBox(width: 18),
+                        const SizedBox(width: Esp.x4),
                         Expanded(child: Boton('Continuar', iconoDerecha: true, icono: LucideIcons.chevronRight, alto: 62, onTap: _continuar)),
                       ])
                     : Boton(_pagando ? 'Conectando con Webpay…' : 'Pagar ${clp(estado.subtotal)} con Webpay',
@@ -135,19 +151,33 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
   List<Widget> _datos(BuildContext context) {
     return [
       ResumenErrores(_faltan),
+      // Resumen corto de lo que se está pagando, para no tener que volver al carrito.
+      Padding(
+        padding: const EdgeInsets.only(bottom: Esp.x4),
+        child: Row(children: [
+          Icon(LucideIcons.shoppingBag, size: Ico.s, color: C.verdeOscuro),
+          const SizedBox(width: Esp.x2),
+          Expanded(
+            child: Text(
+              '${estado.cantidadCarrito} ${estado.cantidadCarrito == 1 ? 'producto' : 'productos'} · ${estado.despachoGratis ? 'despacho gratis' : 'te faltan ${clp(estado.faltaParaGratis)} para el despacho gratis'}',
+              style: T.apoyo,
+            ),
+          ),
+        ]),
+      ),
       if (!estado.conSesion)
         Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(20)),
+          padding: const EdgeInsets.all(Esp.x4),
+          decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(R.l)),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Icon(LucideIcons.badgeCheck, color: C.verdeOscuro, size: 26),
-              const SizedBox(width: 10),
+              Icon(LucideIcons.badgeCheck, color: C.verdeOscuro, size: Ico.m),
+              const SizedBox(width: Esp.x3),
               Expanded(child: Text('Estás comprando como invitado', style: T.cuerpoFuerte.copyWith(color: C.verdeProfundo))),
             ]),
-            const SizedBox(height: 6),
+            const SizedBox(height: Esp.x2),
             Text('No necesitas cuenta. Si tienes una, ingresa para usar tus direcciones guardadas.', style: T.apoyo.copyWith(color: C.verdeOscuro)),
-            const SizedBox(height: 14),
+            const SizedBox(height: Esp.x3),
             Boton('Ingresar a mi cuenta', estilo: EstiloBoton.contorno, alto: 52, onTap: () async {
               await Navigator.of(context).push(MaterialPageRoute(builder: (_) => const IngresarPantalla()));
               if (!mounted) return;
@@ -158,29 +188,55 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
             }),
           ]),
         ),
-      if (!estado.conSesion) const SizedBox(height: 22),
+      if (!estado.conSesion) const SizedBox(height: Esp.x6),
       Text('Contacto', style: T.titulo3),
-      const SizedBox(height: 14),
+      const SizedBox(height: Esp.x3),
       Campo('Nombre y apellido', controlador: _nombre, autofill: const [AutofillHints.name], mayusculas: TextCapitalization.words, icono: LucideIcons.user, error: _req(_nombre, 'Escribe tu nombre.')),
-      const SizedBox(height: 16),
+      const SizedBox(height: Esp.x4),
       Campo('Correo electrónico', controlador: _correo, autofill: const [AutofillHints.email], teclado: TextInputType.emailAddress, icono: LucideIcons.mail, error: _errCorreo, ayuda: 'Aquí te enviamos el comprobante.'),
-      const SizedBox(height: 16),
+      const SizedBox(height: Esp.x4),
       Campo('Teléfono celular', controlador: _telefono, autofill: const [AutofillHints.telephoneNumber], teclado: TextInputType.phone, icono: LucideIcons.phone, error: _req(_telefono, 'Escribe un teléfono por si necesitamos llamarte.'), ayuda: 'Ejemplo: +56 9 1234 5678'),
-      const SizedBox(height: 28),
-      Text('Entrega a domicilio', style: T.titulo3),
-      const SizedBox(height: 6),
+      const SizedBox(height: Esp.x8),
+      Text('¿Cómo quieres recibir tu compra?', style: T.titulo3),
+      const SizedBox(height: Esp.x3),
+      OpcionFila(texto: 'Despacho a domicilio', detalle: 'Llega en 24 a 48 horas', activo: !_retiro, icono: LucideIcons.truck, alTocar: () => setState(() => _retiro = false)),
+      const SizedBox(height: Esp.x2),
+      OpcionFila(texto: 'Retiro en tienda', detalle: 'Sin costo · ${tienda.plazo.toLowerCase()}', activo: _retiro, icono: LucideIcons.store, alTocar: () => setState(() => _retiro = true)),
+      const SizedBox(height: Esp.x4),
+      ..._retiro ? _retiroEnTienda() : _domicilio(context),
+    ];
+  }
+
+  /// Retiro en tienda: dónde es, cuándo está listo y un recado opcional.
+  List<Widget> _retiroEnTienda() {
+    return [
+      const TarjetaTienda(),
+      const SizedBox(height: Esp.x4),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(LucideIcons.idCard, size: Ico.s, color: C.verdeOscuro),
+        const SizedBox(width: Esp.x2),
+        Expanded(child: Text('Al retirar, muestra el número de tu pedido y tu cédula de identidad.', style: T.apoyo)),
+      ]),
+      const SizedBox(height: Esp.x4),
+      Campo('Recado para el local (opcional)', controlador: _notas, icono: LucideIcons.messageSquareText, ayuda: 'Por ejemplo: "Retira mi hermana".', accion: TextInputAction.done),
+    ];
+  }
+
+  /// Despacho a domicilio: dirección, franja de entrega y recado.
+  List<Widget> _domicilio(BuildContext context) {
+    return [
       Row(children: [
-        Icon(LucideIcons.truck, size: 20, color: C.verdeOscuro),
-        const SizedBox(width: 8),
+        Icon(LucideIcons.truck, size: Ico.s, color: C.verdeOscuro),
+        const SizedBox(width: Esp.x2),
         Expanded(child: Text('Llega en 24 a 48 horas', style: T.apoyo)),
       ]),
-      const SizedBox(height: 14),
+      const SizedBox(height: Esp.x3),
       if (_dir == null)
         Panel(
           borde: _intentado ? C.error : null,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('Aún no eliges dónde recibir tu compra.', style: T.cuerpo),
-            const SizedBox(height: 14),
+            const SizedBox(height: Esp.x3),
             Boton('Agregar dirección de entrega', icono: LucideIcons.mapPin, onTap: _elegirDireccion),
           ]),
         )
@@ -190,8 +246,8 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
           borde: C.verde,
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Icon(LucideIcons.mapPin, size: 26, color: C.verdeOscuro),
-              const SizedBox(width: 12),
+              Icon(LucideIcons.mapPin, size: Ico.m, color: C.verdeOscuro),
+              const SizedBox(width: Esp.x3),
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(_dir!.alias, style: T.cuerpoFuerte.copyWith(color: C.verdeProfundo)),
@@ -200,10 +256,19 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
                 ]),
               ),
             ]),
-            const SizedBox(height: 14),
+            const SizedBox(height: Esp.x3),
             Boton('Cambiar dirección', estilo: EstiloBoton.contorno, alto: 52, onTap: _elegirDireccion),
           ]),
         ),
+      const SizedBox(height: Esp.x8),
+      Text('¿Cuándo prefieres recibirla?', style: T.titulo3),
+      const SizedBox(height: Esp.x3),
+      for (final (i, f) in _franjas.indexed) ...[
+        OpcionFila(texto: f, activo: _franja == i, icono: i == 2 ? LucideIcons.clock : LucideIcons.calendarClock, alTocar: () => setState(() => _franja = i)),
+        const SizedBox(height: Esp.x2),
+      ],
+      const SizedBox(height: Esp.x3),
+      Campo('Recado para quien despacha (opcional)', controlador: _notas, icono: LucideIcons.messageSquareText, ayuda: 'Por ejemplo: "Dejar con el conserje".', accion: TextInputAction.done),
     ];
   }
 
@@ -211,26 +276,26 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
     final lineas = estado.carrito.entries.map((e) => (Catalogo.porId(e.key), e.value)).toList();
     return [
       Text('Tu pedido', style: T.titulo3),
-      const SizedBox(height: 12),
+      const SizedBox(height: Esp.x3),
       Panel(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: Esp.x3, vertical: Esp.x2),
         child: Column(children: [
           for (final (i, l) in lineas.indexed) ...[
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.symmetric(vertical: Esp.x3),
               child: Row(children: [
-                ClipRRect(borderRadius: BorderRadius.circular(10), child: SizedBox(width: 52, height: 52, child: FotoProducto(l.$1))),
-                const SizedBox(width: 12),
-                Expanded(child: Text('${l.$2} × ${l.$1.nombre}', maxLines: 2, overflow: TextOverflow.ellipsis, style: T.cuerpo.copyWith(fontSize: 16))),
-                const SizedBox(width: 8),
-                Text(clp(l.$1.precioFinal * l.$2), style: T.cuerpoFuerte.copyWith(fontSize: 16)),
+                ClipRRect(borderRadius: BorderRadius.circular(R.s), child: SizedBox(width: 52, height: 52, child: FotoProducto(l.$1))),
+                const SizedBox(width: Esp.x3),
+                Expanded(child: Text('${l.$2} × ${l.$1.nombre}', maxLines: 2, overflow: TextOverflow.ellipsis, style: T.cuerpoM)),
+                const SizedBox(width: Esp.x2),
+                Text(clp(l.$1.precioFinal * l.$2), style: T.cuerpoMFuerte),
               ]),
             ),
             if (i < lineas.length - 1) const Divider(height: 1),
           ],
         ]),
       ),
-      const SizedBox(height: 14),
+      const SizedBox(height: Esp.x3),
       Panel(
         fondo: C.grisFondo,
         borde: C.grisFondo,
@@ -243,15 +308,15 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
           _FilaTotal('Total a pagar', clp(estado.subtotal), fuerte: true),
         ]),
       ),
-      const SizedBox(height: 26),
+      const SizedBox(height: Esp.x6),
       Text('Forma de pago', style: T.titulo3),
-      const SizedBox(height: 12),
+      const SizedBox(height: Esp.x3),
       Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(20), border: Border.all(color: C.verde, width: 2)),
+        padding: const EdgeInsets.all(Esp.x4),
+        decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(R.l), border: Border.all(color: C.verde, width: 2)),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Icon(LucideIcons.circleCheck, color: C.verde, size: 28),
-          const SizedBox(width: 12),
+          const Icon(LucideIcons.circleCheck, color: C.verde, size: Ico.l),
+          const SizedBox(width: Esp.x3),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('Webpay', style: T.cuerpoFuerte),
@@ -261,12 +326,22 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
           ),
         ]),
       ),
-      const SizedBox(height: 16),
+      const SizedBox(height: Esp.x4),
       Row(children: [
-        const Icon(LucideIcons.shieldCheck, size: 20, color: C.verde),
-        const SizedBox(width: 8),
+        const Icon(LucideIcons.shieldCheck, size: Ico.s, color: C.verde),
+        const SizedBox(width: Esp.x2),
         Expanded(child: Text('Pago protegido. Podrás volver si algo falla.', style: T.apoyo)),
       ]),
+      // TEMPORAL: botón solo para probar la pantalla de pago rechazado. Se quita cuando termine la revisión.
+      const SizedBox(height: Esp.x6),
+      Panel(
+        borde: C.bordeControl,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('Solo para pruebas', style: T.etiqueta.copyWith(color: C.grisMedio)),
+          const SizedBox(height: Esp.x2),
+          Boton('Probar pago rechazado', icono: LucideIcons.circleX, estilo: EstiloBoton.peligro, alto: 52, onTap: _pagando ? null : () => _pagar(forzarRechazo: true)),
+        ]),
+      ),
     ];
   }
 }
@@ -280,10 +355,10 @@ class _FilaTotal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(vertical: Esp.x2),
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(child: Text(a, style: fuerte ? T.titulo3 : T.cuerpo)),
-          const SizedBox(width: 10),
+          const SizedBox(width: Esp.x3),
           Flexible(child: Text(b, textAlign: TextAlign.right, style: (fuerte ? T.titulo3 : T.cuerpoFuerte).copyWith(color: color))),
         ]),
       );
@@ -313,11 +388,11 @@ class _Pasos extends StatelessWidget {
               ),
               child: Center(
                 child: hecho
-                    ? const Icon(LucideIcons.check, color: Colors.white, size: 22)
+                    ? const Icon(LucideIcons.check, color: Colors.white, size: Ico.m)
                     : Text('${i + 1}', style: T.cuerpoFuerte.copyWith(color: activo ? Colors.white : C.grisMedio)),
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: Esp.x2),
             Text(t, style: T.etiqueta.copyWith(fontSize: 15, color: activo || hecho ? C.verdeOscuro : C.grisMedio)),
           ]),
         ),
@@ -329,106 +404,5 @@ class _Pasos extends StatelessWidget {
       Expanded(child: Padding(padding: const EdgeInsets.only(top: 19), child: Container(height: 3, color: paso > 0 ? C.verde : C.borde))),
       punto(1, 'Pago'),
     ]);
-  }
-}
-
-class ExitoPantalla extends StatefulWidget {
-  const ExitoPantalla({super.key, required this.numero, required this.total, required this.correo});
-  final String numero;
-  final int total;
-  final String correo;
-
-  @override
-  State<ExitoPantalla> createState() => _ExitoPantallaState();
-}
-
-class _ExitoPantallaState extends State<ExitoPantalla> with SingleTickerProviderStateMixin {
-  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900));
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (sinMovimiento(context)) {
-      _c.value = 1;
-    } else if (!_c.isAnimating && _c.value == 0) {
-      _c.forward();
-    }
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(24, 36, 24, 16), children: [
-          ScaleTransition(scale: CurvedAnimation(parent: _c, curve: Curves.elasticOut), child: const IlustracionEstado('compra-exitosa.webp', ancho: 280)),
-          const SizedBox(height: 28),
-          Semantics(liveRegion: true, child: Text('¡Tu compra está lista!', textAlign: TextAlign.center, style: T.titulo1)),
-          const SizedBox(height: 10),
-          Text('Pagaste ${clp(widget.total)}. Te enviamos el comprobante a ${widget.correo.isEmpty ? 'tu correo' : widget.correo}.',
-              textAlign: TextAlign.center, style: T.cuerpo.copyWith(color: C.grisMedio)),
-          const SizedBox(height: 24),
-          Panel(
-            fondo: C.verdeSuave,
-            borde: C.verdeSuave,
-            child: Column(children: [
-              Text('Número de pedido', style: T.apoyo.copyWith(color: C.verdeOscuro)),
-              const SizedBox(height: 4),
-              Text(widget.numero, style: T.titulo1.copyWith(color: C.verdeProfundo, fontSize: 32, letterSpacing: .5)),
-              const SizedBox(height: 6),
-              Text('Anótalo: con él puedes seguir tu pedido sin cuenta.', textAlign: TextAlign.center, style: T.apoyo.copyWith(color: C.verdeOscuro)),
-            ]),
-          ),
-          const SizedBox(height: 18),
-          Row(children: [
-            const Icon(LucideIcons.truck, color: C.verde),
-            const SizedBox(width: 10),
-            Expanded(child: Text('Llegará en 24 a 48 horas.', style: T.cuerpoFuerte)),
-          ]),
-        ])),
-        Padding(padding: const EdgeInsets.fromLTRB(24, 8, 24, 20), child: Column(children: [
-          Boton('Seguir mi pedido', icono: LucideIcons.packageCheck, onTap: () {
-            Navigator.of(context).popUntil((r) => r.isFirst);
-            irA(context, SeguimientoPantalla(numero: widget.numero));
-          }),
-          const SizedBox(height: 10),
-          Boton('Volver al inicio', estilo: EstiloBoton.suave, onTap: () {
-            Navigator.of(context).popUntil((r) => r.isFirst);
-            estado.irAPestana(0);
-          }),
-        ])),
-        ]),
-      ),
-    );
-  }
-}
-
-class ErrorPagoPantalla extends StatelessWidget {
-  const ErrorPagoPantalla({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(children: [Expanded(child: ListView(padding: const EdgeInsets.fromLTRB(24, 48, 24, 16), children: [
-          const IlustracionEstado('pago-no-completado.webp', ancho: 280),
-          const SizedBox(height: 26),
-          Text('El pago no se completó', textAlign: TextAlign.center, style: T.titulo1),
-          const SizedBox(height: 10),
-          Text('No te cobramos nada y tus productos siguen en el carrito. Puedes intentarlo de nuevo.', textAlign: TextAlign.center, style: T.cuerpo.copyWith(color: C.grisMedio)),
-        ])),
-        Padding(padding: const EdgeInsets.fromLTRB(24, 8, 24, 20), child: Column(children: [
-          Boton('Intentar de nuevo', icono: LucideIcons.refreshCw, onTap: () => Navigator.of(context).maybePop()),
-          const SizedBox(height: 10),
-          Boton('Llamar para recibir ayuda', estilo: EstiloBoton.contorno, icono: LucideIcons.phone, onTap: () => mostrarContacto(context)),
-        ])),
-        ]),
-      ),
-    );
   }
 }
