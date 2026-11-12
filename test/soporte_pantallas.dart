@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sedyjo_app/app/datos.dart';
 import 'package:sedyjo_app/app/tema.dart';
@@ -12,6 +11,7 @@ import 'package:sedyjo_app/pantallas/bienvenida.dart';
 import 'package:sedyjo_app/pantallas/categorias.dart';
 import 'package:sedyjo_app/pantallas/direccion.dart';
 import 'package:sedyjo_app/pantallas/checkout.dart';
+import 'package:sedyjo_app/pantallas/pago_resultado.dart';
 import 'package:sedyjo_app/pantallas/cuenta.dart';
 import 'package:sedyjo_app/pantallas/pedidos.dart';
 import 'package:sedyjo_app/pantallas/producto.dart';
@@ -21,12 +21,13 @@ import 'package:sedyjo_app/ui/banners.dart';
 
 /// Humo visual: cada pantalla debe armarse sin excepciones ni desbordes, también con letra grande.
 void capturar() {
+  // Se conserva el registro de la prueba: una excepción hace fallar la prueba, además de imprimirse.
+  final registro = FlutterError.onError;
   FlutterError.onError = (d) {
     final lineas = const LineSplitter().convert(d.toString());
     // ignore: avoid_print
-    print(
-      'DETALLE: ${lineas.where((l) => l.contains('app_flutter/lib') || l.contains('overflowed')).take(6).join(' | ')}',
-    );
+    print('EXCEPCION: ${lineas.take(3).join(' | ')}');
+    registro?.call(d);
   };
 }
 

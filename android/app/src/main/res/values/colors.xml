@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Verde de la pantalla de carga: el arranque nativo usa el mismo color para que el cambio sea invisible. -->
+    <color name="sedyjo_arranque">#12372A</color>
+    <!-- Dorado del aro del logo: si el lanzador deja ver el fondo del ícono, se lee como una continuación del aro. -->
+    <color name="sedyjo_icono_fondo">#DEB040</color>
+</resources>

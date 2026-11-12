@@ -15,10 +15,37 @@
 
 - Demo portátil para el cliente: `app_flutter/Sedyjo-Maqueta-Demo.zip` (carpeta `demo-cliente/`): doble clic en `Abrir-Maqueta.bat`. Para regenerarla: `flutter build web --release --no-web-resources-cdn`, copiar `build/web` a `demo-cliente/maqueta` y volver a comprimir. `?cliente=1` oculta el panel.
 
-- Sedyjo NO tiene tienda física: la maqueta no ofrece retiro en tienda (solo despacho a domicilio). Dirección en vista propia (`direccion.dart`) con la comuna escrita a mano. No se menciona ninguna comuna ni zona de despacho en la maqueta (decisión del usuario); la vista "Fuera de zona" queda para cuando el servidor responda que no hay despacho.
+- (Cambió el 10 nov 2026) Sedyjo ahora tiene un local de retiro de ejemplo: Av. Collao 2480, Concepción (`tienda` en `lib/app/datos.dart`). Antes se decía que no había tienda física. Dirección en vista propia (`direccion.dart`) con la comuna escrita a mano. No se menciona ninguna comuna ni zona de despacho en la maqueta (decisión del usuario); la vista "Fuera de zona" queda para cuando el servidor responda que no hay despacho.
 - Textos grandes: sin alturas fijas en tarjetas ni banners; opciones en filas; probado a 130 % y 160 % (`?letra=1.3` en la URL abre la maqueta con ese tamaño).
 
+## Segunda ronda (9 nov 2026): diseño, movimiento y carga
+- Auditoría y estado de las correcciones: `docs/auditoria-diseno-movimiento-v0.2.md`.
+- Nuevo: `lib/ui/movimiento.dart` (vibración, entrada escalonada, números animados, rebote, marca de verificación), `lib/ui/carga.dart` (esqueletos, error por sección, jalar para actualizar), tokens `R`, `Esp`, `Mov` y `ColoresSedyjo` en `lib/app/tema.dart`.
+- Dependencias nuevas: `animations` (contenedor transformado) y `shared_preferences` (recordar "primera vez").
+- Barra inferior ahora es `NavigationBar` (se corrigió que no actualizaba la pestaña ni la insignia). Riel lateral desde 720 dp.
+- Pruebas: `flutter test --concurrency=1 test/<archivo>` de a un archivo (si el ejecutor de Windows cae, repetir).
+
+## Tercera ronda (9 nov 2026): "volar al carrito" y que deje de verse maquetada
+- Animación `volarAlCarrito` (`lib/ui/vuelo_carrito.dart`): burbuja en arco de 560 ms desde el botón hasta el ícono del carrito; al llegar, pulso del ícono, rebote del contador y abanico de seis burbujitas. Dorada sobre tarjetas negras. Si el carrito no se ve, termina en el borde superior. No se desactiva con "reducir movimiento" (decisión del usuario). Conectada a: tarjetas, "+" del selector (carrito y tarjetas), ficha, Ofertas, sección negra y oferta relámpago.
+- Los avisos con acción ("Deshacer", "Ver carrito") se quedaban pegados: desde Flutter 3.29 no se cierran solos sin `persist: false`. Ahora duran 5 s (4 s el de "Agregaste").
+- Comportamiento coherente en vez de simulado:
+  - El carrito empieza vacío y se guarda entre aperturas (también sesión, direcciones, pedidos, tema, tamaño de letra, avisos y búsquedas recientes) con `shared_preferences`.
+  - Comprar crea un pedido real (SED-1043, 1044…) con lo comprado y el correo, vacía el carrito y lo deja primero en "Mis pedidos"; el estado avanza con el tiempo.
+  - "Seguir mi pedido" busca de verdad (número + correo) y avisa si no existe.
+  - El nombre sale del correo; crear cuenta empieza sin pedidos ni direcciones.
+  - "Mis datos" valida y guarda; el teléfono se reutiliza en el pago. Las direcciones exigen calle y comuna.
+  - "Llamar" y "WhatsApp" abren la app del teléfono (`url_launcher`); si no se puede, lo dicen.
+  - Las imágenes de las primeras pantallas se precargan durante la pantalla de carga.
+- Pruebas nuevas: `test/vuelo_carrito_test.dart` (5) y `test/coherencia_test.dart` (9).
+
 ## Pendiente
-- Sin hacer: adaptación a tableta/horizontal, listas perezosas, `NavigationBar` de Material 3, volver predictivo de Android, escala de espacios 4/8, anillo de foco para teclado.
-- Revisar en celular real y con TalkBack.
+- Con servidor: cuenta, contraseñas, pedidos, pago y despacho siguen simulados en el teléfono (sin backend).
+- Migrar los archivos antiguos de `C.*` a `context.col` y quitar `reconstruirTodo()`; aplicar la escala `Esp` a los espacios sueltos.
+- Revisar en celular real (vibración, volver predictivo, arranque verde, fluidez) y con TalkBack; tableta y horizontal reales.
 - Nada se ha commiteado ni desplegado.
+
+## Cuarta ronda (10 nov 2026): retiro en tienda y despacho gratis
+- Retiro en tienda (dirección inventada): opción en el pago, pantalla `Retiro en tienda` con horario, plazo y "Cómo llegar" (Google Maps o Waze), fila en la ficha y en los beneficios del inicio, tarjeta en el detalle del pedido, textos "Listo para retirar"/"Retirado" y salida desde "Fuera de zona".
+- Despacho gratis desde $39.990 en toda la app (constante `despachoGratisDesde`).
+- Avisos ("Deshacer", "Agregaste…") más cerca del borde inferior; en la ficha la barra de compra pasó al Scaffold para que el aviso flote sobre ella.
+- Pruebas de imagen (golden) en `test/goldens/`: `flutter test --update-goldens test/goldens_test.dart` para aceptar cambios.

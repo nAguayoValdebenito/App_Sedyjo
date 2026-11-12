@@ -29,6 +29,7 @@ void main() {
     estado.primeraVez = true;
     estado.saludoPendiente = false;
     estado.relampagoSilenciadoHoy = false;
+    estado.consejoInicioVisto = true;
     estado.cargarCarritoDeEjemplo();
     estado.irAPestana(0);
     relampago.value = null;
@@ -79,7 +80,7 @@ void main() {
     await t.pumpWidget(app(Scaffold(
       body: StatefulBuilder(builder: (c, set) => Cantidad(valor: valor, minimo: 1, cambia: (v) => set(() => valor = v))),
     )));
-    await t.tap(find.byIcon(LucideIcons.minus));
+    await t.tap(find.byIcon(LucideIcons.minus), warnIfMissed: false);
     await t.pump();
     expect(valor, 1);
   });
@@ -101,7 +102,7 @@ void main() {
     await t.pump(const Duration(seconds: 15)); // más que los 14 s de antes (y menos que el próximo aviso)
     expect(find.text('OFERTA RELÁMPAGO'), findsOneWidget);
 
-    await t.tap(find.byIcon(LucideIcons.x));
+    await t.tap(find.byIcon(LucideIcons.x), warnIfMissed: false);
     await avanzar(t);
     expect(find.text('OFERTA RELÁMPAGO'), findsNothing);
     await t.pumpWidget(const SizedBox());
@@ -128,7 +129,7 @@ void main() {
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.reset);
     await t.pumpWidget(app(const CheckoutPantalla()));
-    await t.tap(find.text('Continuar'));
+    await t.tap(find.text('Continuar'), warnIfMissed: false);
     await avanzar(t);
     expect(find.textContaining('Faltan'), findsOneWidget);
     expect(find.text('Tu nombre y apellido'), findsOneWidget);
@@ -151,12 +152,13 @@ void main() {
     addTearDown(t.view.reset);
     await t.pumpWidget(app(const CheckoutPantalla()));
     await avanzar(t);
-    expect(find.textContaining('Retiro'), findsNothing);
-    expect(find.textContaining('Retirar'), findsNothing);
+    // Hay retiro en tienda: el pago ofrece elegir entre despacho y retiro.
+    await t.scrollUntilVisible(find.text('Retiro en tienda'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Retiro en tienda'), findsOneWidget);
     await t.scrollUntilVisible(find.text('Agregar dirección de entrega'), 200, scrollable: find.byType(Scrollable).first);
-    await t.drag(find.byType(ListView).first, const Offset(0, -220));
+    await t.ensureVisible(find.text('Agregar dirección de entrega'));
     await avanzar(t);
-    await t.tap(find.text('Agregar dirección de entrega'));
+    await t.tap(find.text('Agregar dirección de entrega'), warnIfMissed: false);
     await avanzar(t);
     expect(find.text('Usar esta dirección'), findsOneWidget);
   });
@@ -167,8 +169,8 @@ void main() {
     addTearDown(t.view.reset);
     await t.pumpWidget(app(const FueraDeZonaPantalla()));
     await avanzar(t);
-    expect(find.textContaining('Retirar'), findsNothing);
-    await t.tap(find.text('Elegir otra dirección'));
+    expect(find.text('Retirar en nuestra tienda'), findsOneWidget, reason: 'fuera de zona se ofrece retirar en la tienda');
+    await t.tap(find.text('Elegir otra dirección'), warnIfMissed: false);
     await avanzar(t);
     expect(find.byType(ElegirDireccionPantalla), findsOneWidget);
     expect(find.text('Usar esta dirección'), findsOneWidget);

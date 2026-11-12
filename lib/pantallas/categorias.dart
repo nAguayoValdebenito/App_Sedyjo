@@ -3,8 +3,8 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../ui/carga.dart';
 import '../ui/componentes.dart';
-import 'inicio.dart' show abrirProducto;
 
 class CategoriasPestana extends StatelessWidget {
   const CategoriasPestana({super.key});
@@ -14,28 +14,28 @@ class CategoriasPestana extends StatelessWidget {
     return SafeArea(
       bottom: false,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x3, Esp.x5, Esp.x8),
         children: [
           Text('Categorías', style: T.titulo1),
-          const SizedBox(height: 4),
+          const SizedBox(height: Esp.x1),
           Text('Elige qué quieres comprar hoy.', style: T.cuerpo.copyWith(color: C.grisMedio)),
-          const SizedBox(height: 16),
+          const SizedBox(height: Esp.x4),
           Tocable(
             etiqueta: 'Buscar productos',
             onTap: () => irA(context, const BuscarPantalla()),
             child: Container(
               height: 60,
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(18), border: Border.all(color: C.bordeControl, width: 1.5)),
+              padding: const EdgeInsets.symmetric(horizontal: Esp.x4),
+              decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(R.m), border: Border.all(color: C.bordeControl, width: 1.5)),
               child: Row(children: [
-                const Icon(LucideIcons.search, size: 24, color: C.verde),
-                const SizedBox(width: 12),
+                const Icon(LucideIcons.search, size: Ico.m, color: C.verde),
+                const SizedBox(width: Esp.x3),
                 Expanded(child: Text('Buscar un producto', style: T.cuerpo.copyWith(color: C.grisTexto))),
               ]),
             ),
           ),
-          const SizedBox(height: 18),
-          for (final c in categorias) ...[_FilaCategoria(c), const SizedBox(height: 12)],
+          const SizedBox(height: Esp.x4),
+          for (final c in categorias) ...[_FilaCategoria(c), const SizedBox(height: Esp.x3)],
           _FilaTodos(),
         ],
       ),
@@ -54,24 +54,24 @@ class _FilaCategoria extends StatelessWidget {
       etiqueta: '${c.nombre}, ${lista.length} productos',
       onTap: () => irA(context, CategoriaPantalla(c.nombre)),
       child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(color: c.color, borderRadius: BorderRadius.circular(22)),
+        padding: const EdgeInsets.all(Esp.x3),
+        decoration: BoxDecoration(color: c.color, borderRadius: BorderRadius.circular(R.l)),
         child: Row(children: [
           SizedBox(width: 104, height: 104, child: Image.asset(c.ruta, fit: BoxFit.contain, cacheWidth: 300, semanticLabel: '')),
-          const SizedBox(width: 14),
+          const SizedBox(width: Esp.x3),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.nombre, style: T.titulo3.copyWith(fontSize: 20)),
-              const SizedBox(height: 4),
+              Text(c.nombre, style: T.titulo3),
+              const SizedBox(height: Esp.x1),
               Text('${lista.length} productos', style: T.apoyo.copyWith(color: C.grisMedio)),
             ]),
           ),
           Container(
             width: 44,
             height: 44,
-            margin: const EdgeInsets.only(right: 4),
+            margin: const EdgeInsets.only(right: Esp.x1),
             decoration: BoxDecoration(color: C.superficie, shape: BoxShape.circle),
-            child: Icon(LucideIcons.chevronRight, color: C.verdeOscuro, size: 24),
+            child: Icon(LucideIcons.chevronRight, color: C.verdeOscuro, size: Ico.m),
           ),
         ]),
       ),
@@ -88,6 +88,8 @@ class _FilaTodos extends StatelessWidget {
 }
 
 enum _Orden { relevancia, menor, mayor, ofertas }
+
+enum _OrdenBusqueda { relevancia, menor, mayor, ofertas }
 
 /// Listado de una categoría (o de todo el catálogo si [nombre] es null).
 class CategoriaPantalla extends StatefulWidget {
@@ -118,61 +120,78 @@ class _CategoriaPantallaState extends State<CategoriaPantalla> {
 
   @override
   Widget build(BuildContext context) {
-    final lista = _lista;
     const opciones = [
       (_Orden.relevancia, 'Destacados'),
       (_Orden.ofertas, 'Solo ofertas'),
       (_Orden.menor, 'Menor precio'),
       (_Orden.mayor, 'Mayor precio'),
     ];
-    return Scaffold(
-      body: SafeArea(
-        bottom: false,
-        child: Column(children: [
-          BarraSuperior(widget.nombre ?? 'Todo el catálogo'),
-          SizedBox(
-            height: 62,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-              itemCount: opciones.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, i) {
-                final activo = _orden == opciones[i].$1;
-                return Tocable(
-                  etiqueta: 'Ordenar: ${opciones[i].$2}',
-                  onTap: () => setState(() => _orden = opciones[i].$1),
-                  child: Container(
-                    alignment: Alignment.center,
-                    padding: const EdgeInsets.symmetric(horizontal: 18),
-                    decoration: BoxDecoration(
-                      color: activo ? C.verde : C.superficie,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(color: activo ? C.verde : C.bordeControl, width: 1.5),
-                    ),
-                    child: Row(children: [
-                      if (activo) ...[const Icon(LucideIcons.check, size: 18, color: Colors.white), const SizedBox(width: 6)],
-                      Text(opciones[i].$2, style: T.etiqueta.copyWith(fontSize: 16, color: activo ? Colors.white : C.tinta)),
-                    ]),
+    return ValueListenableBuilder<Carga>(
+      valueListenable: Catalogo.carga,
+      builder: (context, carga, _) {
+        final sinDatos = Catalogo.productos.isEmpty || Catalogo.forzarVacio;
+        final lista = sinDatos ? <Producto>[] : _lista;
+        return Scaffold(
+          body: SafeArea(
+            bottom: false,
+            child: Column(children: [
+              BarraSuperior(widget.nombre ?? 'Todo el catálogo', accion: const BotonCarritoMini()),
+              SizedBox(
+                height: 62,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: Esp.x5, vertical: Esp.x2),
+                  itemCount: opciones.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: Esp.x3),
+                  itemBuilder: (context, i) {
+                    final activo = _orden == opciones[i].$1;
+                    return Tocable(
+                      etiqueta: 'Ordenar: ${opciones[i].$2}',
+                      onTap: () => setState(() => _orden = opciones[i].$1),
+                      radio: R.l,
+                      child: AnimatedContainer(
+                        duration: dur(context, 160),
+                        alignment: Alignment.center,
+                        padding: const EdgeInsets.symmetric(horizontal: Esp.x4),
+                        decoration: BoxDecoration(
+                          color: activo ? C.verde : C.superficie,
+                          borderRadius: BorderRadius.circular(R.l),
+                          border: Border.all(color: activo ? C.verde : C.bordeControl, width: 1.5),
+                        ),
+                        child: Row(children: [
+                          if (activo) ...[const Icon(LucideIcons.check, size: Ico.s, color: Colors.white), const SizedBox(width: Esp.x2)],
+                          Text(opciones[i].$2, style: T.cuerpoMFuerte.copyWith(color: activo ? Colors.white : C.tinta)),
+                        ]),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x2, Esp.x5, Esp.x3),
+                child: Align(alignment: Alignment.centerLeft, child: Text(sinDatos ? 'Cargando…' : '${lista.length} productos', style: T.apoyo)),
+              ),
+              Expanded(
+                child: Refrescar(
+                  child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      if (carga == Carga.error)
+                        const SliverToBoxAdapter(child: ErrorSeccion())
+                      else if (sinDatos)
+                        const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.fromLTRB(Esp.x5, 0, Esp.x5, Esp.x8), child: EsqueletoGrilla(n: 6)))
+                      else if (lista.isEmpty)
+                        const SliverFillRemaining(hasScrollBody: false, child: _SinResultados('No hay productos con este filtro.'))
+                      else
+                        SliverPadding(padding: const EdgeInsets.fromLTRB(Esp.x5, 0, Esp.x5, Esp.x8), sliver: SliverGrillaProductos(lista)),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              ),
+            ]),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 6, 20, 10),
-            child: Align(alignment: Alignment.centerLeft, child: Text('${lista.length} productos', style: T.apoyo)),
-          ),
-          Expanded(
-            child: lista.isEmpty
-                ? const _SinResultados('No hay productos con este filtro.')
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 28),
-                    children: [GrillaProductos(lista, abrir: (p) => abrirProducto(context, p))],
-                  ),
-          ),
-        ]),
-      ),
+        );
+      },
     );
   }
 }
@@ -185,12 +204,12 @@ class _SinResultados extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
+        padding: const EdgeInsets.all(Esp.x8),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           const IlustracionEstado('sin-resultados.webp'),
-          const SizedBox(height: 22),
+          const SizedBox(height: Esp.x6),
           Text(texto, textAlign: TextAlign.center, style: T.titulo3),
-          const SizedBox(height: 6),
+          const SizedBox(height: Esp.x2),
           Text('Prueba con otra palabra o mira las categorías.', textAlign: TextAlign.center, style: T.apoyo),
         ]),
       ),
@@ -209,10 +228,77 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
   final _ctl = TextEditingController();
   String _q = '';
 
+  _OrdenBusqueda _orden = _OrdenBusqueda.relevancia;
+  String? _categoria;
+
+  /// Sin tildes ni mayúsculas: "te" encuentra "Té", "cafe" encuentra "Café".
+  static String _norm(String t) {
+    const con = 'áàäâéèëêíìïîóòöôúùüûñ';
+    const sin = 'aaaaeeeeiiiioooouuuun';
+    var r = t.toLowerCase();
+    for (var i = 0; i < con.length; i++) {
+      r = r.replaceAll(con[i], sin[i]);
+    }
+    return r;
+  }
+
+  /// Productos que contienen todas las palabras escritas (en el nombre, la categoría o la descripción).
+  List<Producto> get _coincidencias {
+    final palabras = _norm(_q).split(' ').where((e) => e.isNotEmpty).toList();
+    if (palabras.isEmpty) return [];
+    return Catalogo.productos.where((p) {
+      final texto = _norm('${p.nombre} ${p.categoria} ${p.descripcion}');
+      return palabras.every(texto.contains);
+    }).toList();
+  }
+
   List<Producto> get _resultados {
-    final q = _q.trim().toLowerCase();
-    if (q.isEmpty) return [];
-    return Catalogo.productos.where((p) => p.nombre.toLowerCase().contains(q) || p.categoria.toLowerCase().contains(q)).toList();
+    var l = _coincidencias.where((p) => _categoria == null || p.categoria == _categoria).toList();
+    switch (_orden) {
+      case _OrdenBusqueda.menor:
+        l.sort((a, b) => a.precioFinal.compareTo(b.precioFinal));
+      case _OrdenBusqueda.mayor:
+        l.sort((a, b) => b.precioFinal.compareTo(a.precioFinal));
+      case _OrdenBusqueda.ofertas:
+        l = l.where((p) => p.enOferta).toList();
+      case _OrdenBusqueda.relevancia:
+        break;
+    }
+    return l;
+  }
+
+  /// Cantidad de resultados, orden y categoría: aparecen cuando hay algo que filtrar.
+  Widget _filtros(int n) {
+    final categorias = _coincidencias.map((p) => p.categoria).toSet().toList();
+    const ordenes = [
+      (_OrdenBusqueda.relevancia, 'Más relevantes'),
+      (_OrdenBusqueda.ofertas, 'Solo ofertas'),
+      (_OrdenBusqueda.menor, 'Menor precio'),
+      (_OrdenBusqueda.mayor, 'Mayor precio'),
+    ];
+    Widget fila(List<Widget> chips) => SizedBox(
+          height: 56,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: Esp.x5, vertical: Esp.x1),
+            itemCount: chips.length,
+            separatorBuilder: (_, _) => const SizedBox(width: Esp.x3),
+            itemBuilder: (_, i) => chips[i],
+          ),
+        );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x1, Esp.x5, Esp.x1),
+        child: Semantics(liveRegion: true, child: Text('$n ${n == 1 ? 'resultado' : 'resultados'}', style: T.apoyo)),
+      ),
+      fila([for (final o in ordenes) _ChipSel(o.$2, _orden == o.$1, () => setState(() => _orden = o.$1))]),
+      if (categorias.length > 1)
+        fila([
+          _ChipSel('Todas', _categoria == null, () => setState(() => _categoria = null)),
+          for (final c in categorias) _ChipSel(c, _categoria == c, () => setState(() => _categoria = c)),
+        ]),
+      const SizedBox(height: Esp.x2),
+    ]);
   }
 
   @override
@@ -230,10 +316,10 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
         bottom: false,
         child: Column(children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            padding: const EdgeInsets.fromLTRB(Esp.x4, Esp.x3, Esp.x4, Esp.x2),
             child: Row(children: [
               BotonIcono(LucideIcons.arrowLeft, 'Volver', onTap: () => Navigator.of(context).maybePop()),
-              const SizedBox(width: 12),
+              const SizedBox(width: Esp.x3),
               Expanded(
                 child: TextField(
                   controller: _ctl,
@@ -246,8 +332,8 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
                     hintText: 'Buscar productos',
                     hintStyle: T.cuerpo.copyWith(color: C.grisTexto),
                     filled: true,
-                    fillColor: C.superficie,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    fillColor: C.oscuro ? C.grisFondo : C.superficie,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: Esp.x4, vertical: Esp.x4),
                     suffixIcon: _q.isEmpty
                         ? const Icon(LucideIcons.search, color: C.verde)
                         : IconButton(
@@ -257,27 +343,28 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
                               _q = '';
                             }),
                             icon: Icon(LucideIcons.x, color: C.grisMedio)),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: C.bordeControl, width: 1.5)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide(color: C.bordeControl, width: 1.5)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: C.verde, width: 2.5)),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(R.m), borderSide: BorderSide(color: C.bordeControl, width: 1.5)),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(R.m), borderSide: BorderSide(color: C.bordeControl, width: 1.5)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(R.m), borderSide: const BorderSide(color: C.verde, width: 2.5)),
                   ),
                 ),
               ),
+              const BotonCarritoMini(),
             ]),
           ),
           Expanded(
             child: _q.trim().isEmpty
-                ? ListView(padding: const EdgeInsets.all(20), children: [
+                ? ListView(padding: const EdgeInsets.all(Esp.x5), children: [
                     if (estado.recientes.isNotEmpty) ...[
                       Row(children: [
                         Expanded(child: Text('Tus búsquedas recientes', style: T.titulo3)),
                         Tocable(
                           etiqueta: 'Borrar búsquedas recientes',
                           onTap: () => setState(estado.borrarRecientes),
-                          child: Padding(padding: const EdgeInsets.all(12), child: Text('Borrar', style: T.cuerpoFuerte.copyWith(color: C.azulEnlace, fontSize: 16))),
+                          child: Padding(padding: const EdgeInsets.all(Esp.x3), child: Text('Borrar', style: T.cuerpoFuerte.copyWith(color: C.azulEnlace, fontSize: 16))),
                         ),
                       ]),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: Esp.x2),
                       Wrap(spacing: 10, runSpacing: 10, children: [
                         for (final s in estado.recientes)
                           Tocable(
@@ -287,20 +374,20 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
                               _q = s;
                             }),
                             child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(24), border: Border.all(color: C.bordeControl, width: 1.5)),
+                              padding: const EdgeInsets.symmetric(horizontal: Esp.x4, vertical: Esp.x3),
+                              decoration: BoxDecoration(color: C.superficie, borderRadius: BorderRadius.circular(R.l), border: Border.all(color: C.bordeControl, width: 1.5)),
                               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                Icon(LucideIcons.history, size: 18, color: C.grisMedio),
-                                const SizedBox(width: 8),
-                                Text(s, style: T.cuerpoFuerte.copyWith(fontSize: 16)),
+                                Icon(LucideIcons.history, size: Ico.s, color: C.grisMedio),
+                                const SizedBox(width: Esp.x2),
+                                Text(s, style: T.cuerpoMFuerte),
                               ]),
                             ),
                           ),
                       ]),
-                      const SizedBox(height: 26),
+                      const SizedBox(height: Esp.x6),
                     ],
                     Text('Búsquedas populares', style: T.titulo3),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: Esp.x3),
                     Wrap(spacing: 10, runSpacing: 10, children: [
                       for (final s in populares)
                         Tocable(
@@ -310,23 +397,55 @@ class _BuscarPantallaState extends State<BuscarPantalla> {
                             _q = s;
                           }),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
-                            decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(24)),
-                            child: Text(s, style: T.cuerpoFuerte.copyWith(fontSize: 16, color: C.verdeOscuro)),
+                            padding: const EdgeInsets.symmetric(horizontal: Esp.x4, vertical: 13),
+                            decoration: BoxDecoration(color: C.verdeSuave, borderRadius: BorderRadius.circular(R.l)),
+                            child: Text(s, style: T.cuerpoMFuerte.copyWith(color: C.verdeOscuro)),
                           ),
                         ),
                     ]),
                   ])
-                : res.isEmpty
+                : _coincidencias.isEmpty
                     ? _SinResultados('No encontramos "$_q"')
-                    : ListView(
-                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 28),
-                        children: [
-                          Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('${res.length} resultados', style: T.apoyo)),
-                          GrillaProductos(res, abrir: (p) => abrirProducto(context, p)),
+                    : CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(child: _filtros(res.length)),
+                          if (res.isEmpty)
+                            const SliverFillRemaining(hasScrollBody: false, child: _SinResultados('No hay productos con este filtro.'))
+                          else
+                            SliverPadding(padding: const EdgeInsets.fromLTRB(Esp.x5, 0, Esp.x5, Esp.x8), sliver: SliverGrillaProductos(res)),
                         ],
                       ),
           ),
+        ]),
+      ),
+    );
+  }
+}
+
+class _ChipSel extends StatelessWidget {
+  const _ChipSel(this.texto, this.activo, this.alTocar);
+  final String texto;
+  final bool activo;
+  final VoidCallback alTocar;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tocable(
+      etiqueta: 'Filtrar: $texto${activo ? ', elegido' : ''}',
+      onTap: alTocar,
+      radio: R.l,
+      child: AnimatedContainer(
+        duration: dur(context, 160),
+        alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: Esp.x4),
+        decoration: BoxDecoration(
+          color: activo ? C.verde : C.superficie,
+          borderRadius: BorderRadius.circular(R.l),
+          border: Border.all(color: activo ? C.verde : C.bordeControl, width: 1.5),
+        ),
+        child: Row(children: [
+          if (activo) ...[const Icon(LucideIcons.check, size: Ico.s, color: Colors.white), const SizedBox(width: Esp.x2)],
+          Text(texto, style: T.cuerpoMFuerte.copyWith(color: activo ? Colors.white : C.tinta)),
         ]),
       ),
     );

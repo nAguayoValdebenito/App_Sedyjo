@@ -22,22 +22,22 @@ class AvisosPantalla extends StatelessWidget {
             child: Column(children: [
               const BarraSuperior('Avisos y ofertas'),
               Expanded(
-                child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 28), children: [
+                child: ListView(padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x1, Esp.x5, Esp.x8), children: [
                   Text('Tú decides cuánto quieres enterarte de las ofertas. Puedes cambiarlo cuando quieras.', style: T.cuerpo.copyWith(color: C.grisMedio)),
-                  const SizedBox(height: 22),
+                  const SizedBox(height: Esp.x6),
                   Text('Ofertas relámpago dentro de la app', style: T.titulo3),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: Esp.x1),
                   Text('Un aviso en la parte de arriba mientras miras la tienda. Se queda hasta que lo cierres y no aparece en el carrito ni en el pago.', style: T.apoyo),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: Esp.x3),
                   Column(children: [
                     for (final (i, f) in frecuencias.indexed) ...[
-                      if (i > 0) const SizedBox(height: 8),
+                      if (i > 0) const SizedBox(height: Esp.x2),
                       OpcionFila(texto: f.$2, icono: f.$1 == 0 ? LucideIcons.bellOff : LucideIcons.clock, activo: estado.minutosOfertas == f.$1, alTocar: () => estado.ajustarAvisos(minutos: f.$1)),
                     ],
                   ]),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: Esp.x6),
                   Text('Notificaciones en tu celular', style: T.titulo3),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Esp.x3),
                   Panel(
                     padding: EdgeInsets.zero,
                     child: Column(children: [
@@ -46,11 +46,11 @@ class AvisosPantalla extends StatelessWidget {
                       _Interruptor(LucideIcons.truck, 'Estado de mis pedidos', 'Cuando salga a despacho o llegue', estado.pushPedidos, (v) => estado.ajustarAvisos(pedidos: v)),
                     ]),
                   ),
-                  const SizedBox(height: 26),
+                  const SizedBox(height: Esp.x6),
                   Text('Así se verá', style: T.titulo3),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: Esp.x3),
                   const _PruebaNotificacion(),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: Esp.x4),
                   Boton('Probar oferta relámpago', icono: LucideIcons.zap, onTap: () {
                     Navigator.of(context).popUntil((r) => r.isFirst);
                     estado.irAPestana(0);
@@ -80,15 +80,15 @@ class _Interruptor extends StatelessWidget {
       etiqueta: '$titulo, ${valor ? 'activado' : 'desactivado'}',
       onTap: () => cambia(!valor),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+        padding: const EdgeInsets.fromLTRB(Esp.x4, Esp.x3, Esp.x2, Esp.x3),
         child: Row(children: [
           Container(
             width: 48,
             height: 48,
             decoration: BoxDecoration(color: C.verdeSuave, shape: BoxShape.circle),
-            child: Icon(icono, color: C.verdeOscuro, size: 24),
+            child: Icon(icono, color: C.verdeOscuro, size: Ico.m),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: Esp.x3),
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(titulo, style: T.cuerpoFuerte),
@@ -110,25 +110,25 @@ class _PruebaNotificacion extends StatelessWidget {
   Widget build(BuildContext context) {
     final p = Catalogo.porId(2);
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: C.grisFondo, borderRadius: BorderRadius.circular(22), border: Border.all(color: C.borde)),
+      padding: const EdgeInsets.all(Esp.x3),
+      decoration: BoxDecoration(color: C.grisFondo, borderRadius: BorderRadius.circular(R.l), border: Border.all(color: C.borde)),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Container(
           width: 44,
           height: 44,
           decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
-          child: ClipOval(child: Image.asset('assets/img/logo.webp', fit: BoxFit.cover)),
+          child: ClipOval(child: Image.asset('assets/img/logo.webp', cacheWidth: 260, fit: BoxFit.cover)),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: Esp.x3),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text('Comercial Sedyjo', style: T.etiqueta.copyWith(fontSize: 14, color: C.grisMedio))),
+              Expanded(child: Text('Comercial Sedyjo', style: T.etiqueta.copyWith(color: C.grisMedio))),
               Text('ahora', style: T.apoyo.copyWith(fontSize: 14)),
             ]),
             const SizedBox(height: 2),
-            Text('Oferta del día: -${p.descuento}% en Coca-Cola', style: T.cuerpoFuerte.copyWith(fontSize: 16)),
-            Text('Ahora ${clp(p.precioFinal)}. Solo hoy, hasta agotar stock.', style: T.apoyo.copyWith(fontSize: 15, color: C.grisMedio)),
+            Text('Oferta del día: -${p.descuento}% en Coca-Cola', style: T.cuerpoMFuerte),
+            Text('Ahora ${clp(p.precioFinal)}. Solo hoy, hasta agotar stock.', style: T.apoyo.copyWith(color: C.grisMedio)),
           ]),
         ),
       ]),

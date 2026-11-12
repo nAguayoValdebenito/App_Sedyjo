@@ -13,7 +13,7 @@ class AyudaPantalla extends StatelessWidget {
   Widget build(BuildContext context) {
     const preguntas = [
       ('¿Cuánto demora el despacho?', 'Despachamos a domicilio en 24 a 48 horas desde que se confirma tu pago.'),
-      ('¿Desde qué monto el despacho es gratis?', 'Desde \$49.990 en productos. Bajo ese monto, el costo se calcula al elegir tu dirección.'),
+      ('¿Desde qué monto el despacho es gratis?', 'Desde \$39.990 en productos. Bajo ese monto, el costo se calcula al elegir tu dirección.'),
       ('¿Cómo puedo pagar?', 'Con tarjeta de débito o crédito mediante Webpay. No guardamos los datos de tu tarjeta.'),
       ('¿Necesito una cuenta para comprar?', 'No. Puedes comprar como invitado y seguir tu pedido con el número y tu correo.'),
       ('¿Qué hago si un producto llega con problemas?', 'Llámanos o escríbenos y lo resolvemos con un cambio o devolución.'),
@@ -24,40 +24,40 @@ class AyudaPantalla extends StatelessWidget {
         child: Column(children: [
           const BarraSuperior('Ayuda y contacto'),
           Expanded(
-            child: ListView(padding: const EdgeInsets.fromLTRB(20, 4, 20, 28), children: [
+            child: ListView(padding: const EdgeInsets.fromLTRB(Esp.x5, Esp.x1, Esp.x5, Esp.x8), children: [
               Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(color: C.azul, borderRadius: BorderRadius.circular(24)),
+                padding: const EdgeInsets.all(Esp.x5),
+                decoration: BoxDecoration(color: C.verdeBanner, borderRadius: BorderRadius.circular(R.l)),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(R.l),
                       child: SizedBox(
                         width: 104,
                         height: 118,
-                        child: Image.asset('assets/img/escenas/atencion.webp', fit: BoxFit.cover, alignment: const Alignment(-.2, -.6), semanticLabel: 'Persona del equipo de atención con audífonos'),
+                        child: Image.asset('assets/img/escenas/atencion.webp', cacheWidth: 900, fit: BoxFit.cover, alignment: const Alignment(-.2, -.6), semanticLabel: 'Persona del equipo de atención con audífonos'),
                       ),
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: Esp.x4),
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Habla con nosotros', style: T.titulo2.copyWith(color: Colors.white)),
-                        const SizedBox(height: 6),
-                        Text('Te ayudamos a comprar, paso a paso.', style: T.cuerpo.copyWith(color: const Color(0xFFDCE6F5), fontSize: 16)),
+                        const SizedBox(height: Esp.x2),
+                        Text('Te ayudamos a comprar, paso a paso.', style: T.cuerpo.copyWith(color: C.verdePalido, fontSize: 16)),
                       ]),
                     ),
                   ]),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: Esp.x4),
                   Boton('Llamar $telefonoVisible', icono: LucideIcons.phone, estilo: EstiloBoton.suave, onTap: () => mostrarContacto(context)),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: Esp.x3),
                   Boton('Escribir por WhatsApp', icono: LucideIcons.messageCircle, estilo: EstiloBoton.contorno, onTap: () => mostrarContacto(context, whatsapp: true)),
                 ]),
               ),
-              const SizedBox(height: 26),
+              const SizedBox(height: Esp.x6),
               Text('Preguntas frecuentes', style: T.titulo2),
-              const SizedBox(height: 14),
-              for (final q in preguntas) ...[_Pregunta(q.$1, q.$2), const SizedBox(height: 10)],
-              const SizedBox(height: 14),
+              const SizedBox(height: Esp.x3),
+              for (final q in preguntas) ...[_Pregunta(q.$1, q.$2), const SizedBox(height: Esp.x3)],
+              const SizedBox(height: Esp.x3),
               Panel(
                 padding: EdgeInsets.zero,
                 child: Column(children: [
@@ -99,19 +99,19 @@ class _PreguntaState extends State<_Pregunta> {
         alignment: Alignment.topCenter,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(Esp.x4),
           decoration: BoxDecoration(
             color: _abierta ? C.verdeSuave : C.superficie,
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(R.m),
             border: Border.all(color: _abierta ? C.verde : C.borde, width: _abierta ? 2 : 1.5),
           ),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text(widget.q, style: T.cuerpoFuerte.copyWith(fontSize: 17))),
+              Expanded(child: Text(widget.q, style: T.cuerpoFuerte)),
               Icon(_abierta ? LucideIcons.chevronDown : LucideIcons.plus, color: C.verdeOscuro),
             ]),
             if (_abierta) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: Esp.x3),
               Text(widget.r, style: T.cuerpo.copyWith(color: C.verdeProfundo, fontSize: 17)),
             ],
           ]),
@@ -133,10 +133,10 @@ class _Enlace extends StatelessWidget {
       etiqueta: texto,
       onTap: alTocar,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(Esp.x4),
         child: Row(children: [
-          Icon(icono, color: C.verdeOscuro, size: 26),
-          const SizedBox(width: 14),
+          Icon(icono, color: C.verdeOscuro, size: Ico.m),
+          const SizedBox(width: Esp.x3),
           Expanded(child: Text(texto, style: T.cuerpoFuerte)),
           Icon(LucideIcons.chevronRight, color: C.grisMedio),
         ]),
