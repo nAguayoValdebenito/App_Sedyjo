@@ -6,27 +6,14 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../pago/modelos_pago.dart';
 import 'direccion.dart' show mostrarContacto;
 import '../ui/componentes.dart';
 import 'pedidos.dart';
 import 'shell.dart' show BarraInferior;
 
-/// Cómo terminó el pago.
-class ResultadoPago {
-  const ResultadoPago.aprobado({required String this.numero, required this.total, required this.correo, this.retiro = false}) : aprobado = true;
-  const ResultadoPago.rechazado()
-      : aprobado = false,
-        numero = null,
-        total = 0,
-        correo = '',
-        retiro = false;
-
-  final bool aprobado;
-  final String? numero;
-  final int total;
-  final String correo;
-  final bool retiro;
-}
+// `ResultadoPago` vive ahora en los modelos del pago; se reexporta para no tocar a quienes lo importan de aquí.
+export '../pago/modelos_pago.dart' show ResultadoPago, MotivoNoPago, ComprobantePago;
 
 /// Estado del sello circular de arriba.
 enum Sello { procesando, aprobado, rechazado }
