@@ -67,6 +67,9 @@ class FakePasarela implements PasarelaPago {
   }
 }
 
+/// Almacenamiento del dispositivo (de mentira), vacío al empezar cada prueba.
+late SharedPreferences _almacen;
+
 /// `abrirWebpay` de mentira: devuelve [retorno] y anota cada llamada (y qué había guardado en ese momento).
 class FakeWebpay {
   FakeWebpay([this.retorno = RetornoPago.completado]);
@@ -76,9 +79,10 @@ class FakeWebpay {
   String? guardadoAlAbrir;
 
   Future<RetornoPago> call(BuildContext context, Redireccion r) async {
+    // Se lee sin esperar nada antes: si el guardado no terminó al abrir Webpay, aquí aún no está.
     llamadas++;
     pendienteAlAbrir = estado.pagoPendiente?.numero;
-    guardadoAlAbrir = (await SharedPreferences.getInstance()).getString('estado_v1');
+    guardadoAlAbrir = _almacen.getString('estado_v1');
     return retorno;
   }
 }
@@ -121,7 +125,10 @@ void main() {
     await Catalogo.cargar();
   });
 
-  setUp(() {
+  setUp(() async {
+    // Cada prueba parte con el almacenamiento vacío: lo que guardó una prueba anterior no cuenta para la siguiente.
+    SharedPreferences.setMockInitialValues({});
+    _almacen = await SharedPreferences.getInstance();
     pedidosIniciales = List.of(estado.pedidos);
     estado.carrito
       ..clear()
@@ -272,9 +279,11 @@ void main() {
     telefono(t);
     final webpay = FakeWebpay();
     await t.pumpWidget(_app(FlujoPago(pasarela: FakePasarela(), abrirWebpay: webpay.call)));
+    expect(_almacen.getString('estado_v1'), isNull, reason: 'el dispositivo parte sin nada guardado');
 
     await pagarYEsperar(t);
 
+    expect(webpay.llamadas, 1);
     expect(webpay.pendienteAlAbrir, 'SED-10482');
     expect(webpay.guardadoAlAbrir, contains('SED-10482'), reason: 'Memoria.guardarYa() terminó antes de salir a Webpay');
     await t.pumpWidget(const SizedBox());
