@@ -11,7 +11,7 @@
 - Tercer lote de imágenes integrado (ver `docs/ideas-nuevas-imagenes.md`, tercera tanda): banners con texto real dorado/morado sobre negro (`lib/ui/banners.dart`), ideas para tu mesa, foto en uso en la ficha, estados claro/oscuro, producto agotado, seguimiento. La bienvenida NO usa fotos de personas (feedback del usuario).
 - `docs/ideas-fotos.md`: lista de fotos e ilustraciones a producir.
 - Imágenes IA integradas (ZIP del usuario): 35 productos recortados, héroes, categorías, estados, bienvenida, atención y patrón de carga; ver `docs/ideas-nuevas-imagenes.md` (qué se usó, qué no y qué crear). Archivos en `assets/img/{p,hero,cat,estados,escenas,patrones}/`. Los ZIP originales están en Descargas; extraídos en la carpeta temporal.
-- Pruebas: `flutter test --concurrency=1` → 105 pasan (si el runner de Windows cae, repetir).
+- Pruebas: `flutter test --concurrency=1` → 105 pasan en esa fecha (hoy la suite completa pasa 336; ver el resumen del pago al final). Si el runner de Windows cae, repetir.
 
 - Demo portátil para el cliente: `app_flutter/Sedyjo-Maqueta-Demo.zip` (carpeta `demo-cliente/`): doble clic en `Abrir-Maqueta.bat`. Para regenerarla: `flutter build web --release --no-web-resources-cdn`, copiar `build/web` a `demo-cliente/maqueta` y volver a comprimir. `?cliente=1` oculta el panel.
 
@@ -39,10 +39,10 @@
 - Pruebas nuevas: `test/vuelo_carrito_test.dart` (5) y `test/coherencia_test.dart` (9).
 
 ## Pendiente
-- Con servidor: cuenta, contraseñas, pedidos, pago y despacho siguen simulados en el teléfono (sin backend).
+- Con servidor: cuenta, contraseñas, pedidos y despacho siguen simulados en el teléfono (sin backend). El pago ya tiene escrita la integración con Webpay vía backend, pero ese backend aún no existe: por defecto sigue simulado (ver «Pago con Webpay en la app» al final).
 - Migrar los archivos antiguos de `C.*` a `context.col` y quitar `reconstruirTodo()`; aplicar la escala `Esp` a los espacios sueltos.
 - Revisar en celular real (vibración, volver predictivo, arranque verde, fluidez) y con TalkBack; tableta y horizontal reales.
-- Nada se ha commiteado ni desplegado.
+- Estado del código (18 nov 2026): el trabajo está commiteado en la rama `mejoras-diseno-movimiento-y-flujos`; esos commits aún no se han subido (push) a `origin` (la rama va por delante) y nada está desplegado en ningún servidor.
 
 ## Cuarta ronda (10 nov 2026): retiro en tienda y despacho gratis
 - Retiro en tienda (dirección inventada): opción en el pago, pantalla `Retiro en tienda` con horario, plazo y "Cómo llegar" (Google Maps o Waze), fila en la ficha y en los beneficios del inicio, tarjeta en el detalle del pedido, textos "Listo para retirar"/"Retirado" y salida desde "Fuera de zona".

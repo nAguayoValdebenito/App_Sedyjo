@@ -54,4 +54,4 @@ demo-cliente/          lanzador portátil para mostrar la maqueta en otro Window
 - Paleta de la web de Sedyjo: verde, azul de apoyo, rojo solo en descuentos; dorado y morado solo sobre negro.
 - Íconos Lucide, sin emojis. Texto real en banners (nada de texto dentro de las imágenes).
 - Modo claro, oscuro y automático; letra ajustable; opción de reducir animaciones.
-- No hay retiro en tienda (el negocio no tiene tienda física) ni se menciona una zona de despacho.
+- Hay retiro en tienda, con un local de ejemplo (Av. Collao 2480, Concepción; dirección inventada que hay que cambiar por la real). No se menciona ninguna comuna ni zona de despacho.
