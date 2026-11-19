@@ -49,3 +49,30 @@
 - Despacho gratis desde $39.990 en toda la app (constante `despachoGratisDesde`).
 - Avisos ("Deshacer", "Agregaste…") más cerca del borde inferior; en la ficha la barra de compra pasó al Scaffold para que el aviso flote sobre ella.
 - Pruebas de imagen (golden) en `test/goldens/`: `flutter test --update-goldens test/goldens_test.dart` para aceptar cambios.
+
+## Pago con Webpay: verificación pendiente
+Hecho en esta máquina (Windows, sin emulador ni dispositivo): el servidor de prueba `tools/webpay_falso.py` (solo desarrollo, nunca desplegar) cumple el contrato de `docs/backend-webpay.md` §4 y el cliente real `PasarelaWebpay` se probó contra él con red real (aprobado con comprobante, rechazado, cancelado, `precios_cambiaron`, sin conexión). **Falta probar la interfaz en un emulador o dispositivo.**
+
+Comandos (dos terminales; el emulador de Android ve el equipo anfitrión como `10.0.2.2`):
+```
+python tools/webpay_falso.py --puerto 8080            # añadir --precios-cambian para el caso 7
+flutter run --dart-define=PAGO_MODO=webpay --dart-define=API_URL=http://10.0.2.2:8080/api/v1
+```
+El `http` solo funciona en debug (`android/app/src/debug/AndroidManifest.xml` permite tráfico sin cifrar; release no).
+
+Casos manuales, todos **pendientes**:
+- [ ] 1. Comprar y «Aprobar» → círculo verde, pedido `SED-9000X`, comprobante visible, carrito vacío.
+- [ ] 2. «Rechazar» → «El pago no se completó», carrito intacto.
+- [ ] 3. «Cancelar» → «Cancelaste el pago», carrito intacto.
+- [ ] 4. Cerrar con «✕» → «¿Salir del pago?»; «Salir» → resultado coherente con el estado del servidor.
+- [ ] 5. Matar la app en la página de pago y reabrirla → se reanuda sola («Estamos confirmando tu pago» o el resultado final), sin duplicar pedidos.
+- [ ] 6. Apagar el servidor antes de tocar «Pagar» → «No pudimos conectar… no se cobró nada» y el botón vuelve a estar disponible.
+- [ ] 7. Con `--precios-cambian` → diálogo «Cambió el total»; «Continuar» abre Webpay.
+- [ ] 8. Doble toque rápido en «Pagar» → un solo pedido en el servidor (revisar la consola del servidor de prueba).
+
+Comprobaciones del WebView en dispositivo real, también **pendientes**:
+- [ ] El `302` a `urlFin` llega a `onNavigationRequest` y se intercepta, en Android y en iOS.
+- [ ] El `POST` con cuerpo (`token_ws`) a la página de pago funciona en ambas plataformas.
+- [ ] «Reintentar» vuelve a hacer el `POST` (no un `GET` sin cuerpo).
+- [ ] Los iframes de 3D Secure no los bloquea el filtro de esquemas (`about:srcdoc`, `blob:`, `data:`).
+- [ ] iOS no se puede probar en Windows: probar en un Mac con el backend real por `https` (el servidor de prueba es `http`) y antes de enviar a la App Store.
