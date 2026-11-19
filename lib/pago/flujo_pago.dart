@@ -44,6 +44,9 @@ class FlujoPago {
     if (_enCurso) return;
     _enCurso = true;
     try {
+      // Un pendiente vencido (más de 24 h) se olvida aquí mismo: este toque sigue a un pago nuevo.
+      final p = estado.pagoPendiente;
+      if (p != null && p.vencido(DateTime.now())) estado.limpiarPagoPendiente();
       if (estado.pagoPendiente != null) {
         // Sin pasar por `reanudarSiHay`: su guarda vería este mismo pago en curso y no haría nada.
         await _reanudar(context);
@@ -117,6 +120,7 @@ class FlujoPago {
 
   /// Inicia el pago en la pasarela. Si cambiaron los precios, pregunta y reintenta una vez con el total nuevo.
   /// Devuelve `null` si no se inició (error mostrado o el cliente prefirió volver).
+  /// Un error inesperado también se muestra: aquí aún no se guardó nada y Webpay no está abierto.
   Future<InicioPago?> _iniciar(BuildContext context, SolicitudPago solicitud) async {
     try {
       return await pasarela.iniciar(solicitud);
@@ -134,9 +138,17 @@ class FlujoPago {
       } on ErrorPago catch (e2) {
         if (context.mounted) await _avisarError(context, e2.mensaje);
         return null;
+      } catch (_) {
+        if (context.mounted) await _avisarError(context, _mensajeInesperado);
+        return null;
       }
+    } catch (_) {
+      if (context.mounted) await _avisarError(context, _mensajeInesperado);
+      return null;
     }
   }
+
+  static const _mensajeInesperado = 'No pudimos iniciar el pago. No se cobró nada. Inténtalo de nuevo en un momento.';
 
   /// Consulta cómo terminó el pago y deja todo en orden. Se llama desde la pantalla de resultado.
   Future<ResultadoPago> _cerrar(PagoPendiente p, RetornoPago retorno) async {

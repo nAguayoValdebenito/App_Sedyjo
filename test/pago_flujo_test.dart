@@ -37,7 +37,14 @@ const _aprobado = ResultadoPago.aprobado(numero: 'SED-10482', total: 12990, corr
 /// Pasarela de mentira: lanza los errores pedidos en los primeros `iniciar`, luego inicia
 /// el pedido SED-10482; `resultado` responde lo pedido y cuenta las consultas.
 class FakePasarela implements PasarelaPago {
-  FakePasarela({this.errores = const [], this.respuesta = _aprobado, this.conRedireccion = true, this.puerta, this.falla});
+  FakePasarela({
+    this.errores = const [],
+    this.respuesta = _aprobado,
+    this.conRedireccion = true,
+    this.puerta,
+    this.falla,
+    this.fallaEn = 1,
+  });
 
   final List<ErrorPago> errores;
 
@@ -48,8 +55,9 @@ class FakePasarela implements PasarelaPago {
   /// Si existe, `iniciar` espera a que se complete (para probar el doble toque).
   final Completer<void>? puerta;
 
-  /// Si existe, el primer `iniciar` lanza esto: un error inesperado, no un [ErrorPago].
+  /// Si existe, el `iniciar` número [fallaEn] lanza esto: un error inesperado, no un [ErrorPago].
   final Object? falla;
+  final int fallaEn;
 
   final List<SolicitudPago> iniciadas = [];
   final List<RetornoPago> retornos = [];
@@ -59,7 +67,7 @@ class FakePasarela implements PasarelaPago {
   Future<InicioPago> iniciar(SolicitudPago solicitud) async {
     iniciadas.add(solicitud);
     if (puerta != null) await puerta!.future;
-    if (falla != null && iniciadas.length == 1) throw falla!;
+    if (falla != null && iniciadas.length == fallaEn) throw falla!;
     if (iniciadas.length <= errores.length) throw errores[iniciadas.length - 1];
     return InicioPago(
       PagoPendiente(numero: 'SED-10482', token: 'tok-123', total: solicitud.totalVisto, solicitud: solicitud, creado: DateTime.now()),
@@ -551,24 +559,113 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('18. un error inesperado no deja el flujo trabado: el siguiente pagar funciona', (t) async {
+  testWidgets('18. un error inesperado al iniciar: hoja de error sin lanzar, nada guardado, y el siguiente pagar funciona', (t) async {
     telefono(t);
+    final webpay = FakeWebpay();
     final pasarela = FakePasarela(falla: StateError('se cayó algo'));
-    final flujo = FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call);
+    final flujo = FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call);
     await t.pumpWidget(_app(flujo));
 
     Object? error;
-    flujo.pagar(t.element(find.text('Pagar')), _solicitud).catchError((Object e) {
+    var termino = false;
+    unawaited(flujo.pagar(t.element(find.text('Pagar')), _solicitud).then((_) => termino = true, onError: (Object e) {
       error = e;
-    });
-    await t.pump();
-    expect(error, isA<StateError>());
+    }));
+    await esperar(t, 1000);
+
+    expect(error, isNull, reason: 'el error no se escapa del flujo');
+    expect(find.text('No pudimos iniciar el pago'), findsOneWidget);
+    expect(find.text('No pudimos iniciar el pago. No se cobró nada. Inténtalo de nuevo en un momento.'), findsOneWidget);
+    expect(estado.pagoPendiente, isNull);
+    expect(webpay.llamadas, 0);
+
+    await t.tap(find.widgetWithText(Boton, 'Entendido'));
+    await esperar(t, 1000);
+    expect(termino, isTrue);
+    expect(error, isNull);
 
     await pagarYEsperar(t);
 
     expect(pasarela.iniciadas, hasLength(2));
     expect(pasarela.consultas, 1);
+    expect(webpay.llamadas, 1);
     expect(find.text('Seguir mi pedido'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('18b. un error inesperado en el reintento con el total nuevo: hoja de error sin lanzar ni guardar nada', (t) async {
+    telefono(t);
+    final webpay = FakeWebpay();
+    final pasarela = FakePasarela(
+      errores: const [ErrorPago('precios_cambiaron', 'Los precios cambiaron.', totalNuevo: 12500)],
+      falla: StateError('se cayó algo'),
+      fallaEn: 2,
+    );
+    final flujo = FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call);
+    await t.pumpWidget(_app(flujo));
+
+    Object? error;
+    unawaited(flujo.pagar(t.element(find.text('Pagar')), _solicitud).catchError((Object e) {
+      error = e;
+    }));
+    await esperar(t, 1000);
+    await t.tap(find.widgetWithText(Boton, 'Continuar'));
+    await esperar(t, 1000);
+
+    expect(pasarela.iniciadas, hasLength(2));
+    expect(error, isNull);
+    expect(find.text('No pudimos iniciar el pago'), findsOneWidget);
+    expect(find.text('No pudimos iniciar el pago. No se cobró nada. Inténtalo de nuevo en un momento.'), findsOneWidget);
+    expect(estado.pagoPendiente, isNull);
+    expect(webpay.llamadas, 0);
+
+    await t.tap(find.widgetWithText(Boton, 'Entendido'));
+    await esperar(t, 1000);
+    expect(error, isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('19. pendiente vencido (25 h) y «Pagar»: se olvida y en el mismo toque se inicia un pago nuevo', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente(creado: DateTime.now().subtract(const Duration(hours: 25))));
+    final pasarela = FakePasarela();
+    final webpay = FakeWebpay();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call)));
+
+    await pagarYEsperar(t);
+
+    expect(pasarela.iniciadas, hasLength(1));
+    expect(webpay.llamadas, 1);
+    expect(webpay.pendienteAlAbrir, 'SED-10482');
+    expect(pasarela.retornos, [RetornoPago.completado], reason: 'solo la consulta del pago nuevo');
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    expect(estado.pagoPendiente, isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('20. reanudar → sin confirmar → atrás → «Pagar» vuelve a consultar (reanudarSiHay soltó la guarda)', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente());
+    final pasarela = FakePasarela(respuesta: const ResultadoPago.sinConfirmar());
+    final webpay = FakeWebpay();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call)));
+
+    await reanudarYEsperar(t);
+    expect(find.text('Estamos confirmando tu pago'), findsOneWidget);
+    expect(pasarela.consultas, 1);
+
+    await t.binding.handlePopRoute(); // «atrás» del sistema
+    await esperar(t, 1000);
+    expect(find.byType(ResultadoPagoPantalla, skipOffstage: false), findsNothing);
+    expect(estado.pagoPendiente, isNotNull, reason: 'sin confirmar conserva el pendiente');
+
+    await pagarYEsperar(t);
+
+    expect(pasarela.consultas, 2, reason: 'el segundo toque no quedó bloqueado por la guarda');
+    expect(pasarela.retornos, [RetornoPago.desconocido, RetornoPago.desconocido]);
+    expect(pasarela.iniciadas, isEmpty, reason: 'con un pendiente vigente se retoma, no se inicia otro');
+    expect(webpay.llamadas, 0);
+    expect(find.text('Estamos confirmando tu pago'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
