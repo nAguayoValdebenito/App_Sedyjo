@@ -47,7 +47,11 @@ Cabeceras: `Content-Type: application/json` e `Idempotency-Key: <32 caracteres h
 
 `entrega.tipo` es `domicilio` o `retiro` (con `retiro`, `direccion` trae la dirección del local). `franja` y `notas` pueden venir `null`.
 
-La app espera la respuesta hasta 15 segundos. Si no llega nada (tiempo agotado o sin conexión), **reintenta una sola vez con la misma `Idempotency-Key`**; por eso la idempotencia no es opcional. Si el segundo intento también falla, le dice al cliente que no se cobró nada.
+**Despacho (decisión pendiente del negocio):** hoy `totalVisto` es **solo productos, sin despacho** (en la app es `estado.subtotal`; el checkout dice «Despacho: se confirma al pagar»), y el `total` de la respuesta debe calcularse igual: solo productos. Si el backend sumara el despacho, todo pedido bajo el mínimo de despacho gratis recibiría `precios_cambiaron`. Si el negocio decide cobrar el despacho en Webpay, hay que cambiar la app y este contrato a la vez.
+
+Una lista `items` vacía responde `400` (con `error`). Una petición con una `Idempotency-Key` que **todavía se está procesando** (la primera no ha respondido) no debe crear una segunda transacción: hay que bloquear por clave (esperar a que termine la primera y devolver su respuesta, o responder un error `409` sin crear nada).
+
+La app espera la respuesta hasta 15 segundos. Si no llega nada (tiempo agotado, sin conexión o un error de TLS), **reintenta una sola vez con la misma `Idempotency-Key`**; por eso la idempotencia no es opcional. Si el segundo intento también falla, le dice al cliente que no se cobró nada.
 
 El backend:
 1. Valida productos, stock y cobertura, y **calcula el total** con precios y ofertas vigentes.
@@ -70,9 +74,9 @@ El backend:
 
 `urlFin` es la dirección que la app detecta para saber que el cliente volvió (ver 4.2). Se compara **host y ruta** (se ignoran esquema, query y barra final): el `Location` del `302` de 4.2 debe ser esa misma dirección con la query que se quiera (`?numero=…`). No es un prefijo: una ruta más larga no cuenta.
 
-Lo que la app exige a la respuesta `200`/`201` (si falta algo, muestra «No pudimos iniciar el pago. No se cobró nada.»): `data.numero` y `data.token` con texto no vacío, `data.total` entero, y `data.url` y `data.urlFin` direcciones `http(s)` con host. En producción deben ser `https`: la app móvil en release bloquea `http`.
+Lo que la app exige a la respuesta `200`/`201` (si falta algo, muestra «No pudimos iniciar el pago. No se cobró nada.»): `data.numero` y `data.token` con texto no vacío, `data.total` entero, y `data.url` y `data.urlFin` direcciones `http(s)` con host. Fuera del desarrollo deben ser `https`: solo una compilación **debug** de la app acepta `http`; **profile y release lo bloquean**.
 
-Errores: cualquier `4xx` con `error` (texto no vacío) y `code` se muestra tal cual al cliente (`error` debe ser apto para mostrar). Un `5xx`, o una respuesta que no sea JSON con ese formato, se muestra como el mensaje genérico anterior.
+Errores: cualquier `4xx` con `error` (texto no vacío) se muestra tal cual al cliente (`error` debe ser apto para mostrar). `code` es **recomendado** (la app lo usa para reconocer `precios_cambiaron`), pero la app solo exige `error`. Un `5xx`, o una respuesta que no sea JSON con ese formato, se muestra como el mensaje genérico anterior.
 
 ### 4.2 `GET|POST /pagos/webpay/retorno` — vuelta desde Webpay (la llama Transbank a través del navegador del cliente)
 
@@ -97,7 +101,7 @@ Una página mínima («Volviendo a la tienda…»). La app intercepta esta direc
 
 ### 4.4 `GET /pagos/webpay/{numero}` — estado del pago (la app lo consulta)
 
-Cabecera `X-Token-Pago: <token>` (el mismo `token` de 4.1; sirve de clave de consulta, así un invitado sin cuenta puede consultar solo su pedido). Token ausente o distinto → `404`. **Ojo:** para la app un `404` significa «ese pedido no existe, no hay cobro» y lo muestra como rechazado de inmediato, sin volver a preguntar; no lo uses para decir «todavía no está» (para eso existe `pendiente`).
+Cabecera `X-Token-Pago: <token>` (el mismo `token` de 4.1; sirve de clave de consulta, así un invitado sin cuenta puede consultar solo su pedido). Pedido desconocido, o token ausente o distinto → `404` con el cuerpo de error del contrato, `{ "error": "Pedido no encontrado.", "code": "no_encontrado" }`. **Ojo:** para la app un `404` con ese cuerpo (un `error` de texto no vacío) significa «ese pedido no existe, no hay cobro» y lo muestra como rechazado de inmediato, sin volver a preguntar; no lo uses para decir «todavía no está» (para eso existe `pendiente`). Un `404` **sin** ese cuerpo (p. ej. la página HTML de un proxy o una ruta mal configurada) se trata como falta de respuesta: la app sigue preguntando.
 
 ```json
 { "data": {
@@ -117,10 +121,10 @@ Cabecera `X-Token-Pago: <token>` (el mismo `token` de 4.1; sirve de clave de con
 ```
 
 - `estado`: `pendiente` (aún no se confirma), `aprobado`, `rechazado`, `cancelado` o `expirado`. La app muestra `expirado` igual que `rechazado`; un estado desconocido lo trata como `pendiente`.
-- Con `aprobado` la app exige `total` entero y `correo` texto (más `numero` igual al consultado, si viene); si falta alguno, no lo da por pagado y sigue preguntando. `retiro` es booleano (si falta, cuenta como `false`).
-- `comprobante` solo con `aprobado`; la app lo muestra únicamente si trae `codigoAutorizacion`, `tarjetaUltimos4` y `tipoPago` como texto y `cuotas` como número (`fecha` es opcional, ISO 8601); si falta alguno, el pago se acepta igual pero sin comprobante. Convertir `payment_type_code` de Transbank a texto: `VD` → «Débito», `VN`/`VC`/`SI`/`S2`/`NC` → «Crédito», `VP` → «Prepago»; `cuotas` = `installments_number`.
-- **Fuente de verdad:** la app llama a este endpoint hasta que `estado` deje de ser `pendiente` y se guía solo por él. Hace 8 consultas, con pausas previas de 0, 1, 1, 2, 2, 3, 3 y 4 segundos (unos 16 s en total) y 15 s de tope por consulta. Un `5xx`, un error de red o una respuesta ilegible no cuentan como rechazo: sigue preguntando. Si se agotan las consultas sin respuesta clara, la app muestra «Estamos confirmando tu pago», conserva el pago pendiente en el teléfono y lo retoma al volver a abrirla (hasta 24 h).
-- Pedidos que sigan `pendiente_pago` pasados ~30 minutos: marcarlos `expirado` (un proceso periódico; si hace falta, consultar el estado a Transbank antes).
+- Con `aprobado` **decide el `estado`**: `total`, `correo` y `retiro` son solo para mostrar. Deben venir (`total` entero, `correo` texto, `retiro` booleano), pero si alguno falta o viene mal formado la app no deja de dar el pago por aprobado: usa los de su propio pedido como respaldo (el total con que se inició el pago, y el correo y la entrega que envió). Lo único que hace a la app seguir preguntando es un `numero` distinto del consultado (si viene).
+- `comprobante` solo con `aprobado`; la app lo muestra únicamente si trae `codigoAutorizacion`, `tarjetaUltimos4` y `tipoPago` como texto y `cuotas` como número finito (`fecha` es opcional, ISO 8601); si falta alguno o no se puede leer, el pago se acepta igual pero sin comprobante. Convertir `payment_type_code` de Transbank a texto: `VD` → «Débito», `VN`/`VC`/`SI`/`S2`/`NC` → «Crédito», `VP` → «Prepago»; `cuotas` = `installments_number`.
+- **Fuente de verdad:** la app llama a este endpoint hasta que `estado` deje de ser `pendiente` y se guía solo por él. Hace 8 consultas, con pausas previas de 0, 1, 1, 2, 2, 3, 3 y 4 segundos (los ~16 s son **solo las pausas**) y **5 s de tope por consulta** (peor caso, unos 56 s). Un `5xx`, un `404` sin el cuerpo de error, un error de red o una respuesta ilegible no cuentan como rechazo: sigue preguntando. Si se agotan las consultas sin respuesta clara, la app muestra «Estamos confirmando tu pago», conserva el pago pendiente en el teléfono y lo retoma al volver a abrirla (hasta 24 h). Mientras ese pendiente exista, «Pagar» retoma ese pago en vez de iniciar otro.
+- **Pagos abandonados:** si un pedido sigue `pendiente_pago` y su formulario de Webpay ya no puede completarse, este endpoint **no debe seguir respondiendo `pendiente`**: el backend consulta a Transbank el estado de la transacción (`GET …/transactions/{token}`) y responde `aprobado` (si quedó autorizada; con los mismos pasos de «pasar a `pagado`» de 4.2, sin duplicar nada) o `expirado`. El límite es el **tiempo del formulario de Transbank**, no una espera fija de ~30 min: según transbankdevelopers.cl (Webpay Plus), el cliente tiene **4 minutos en producción y 10 en integración** para completar el formulario, el token debe usarse dentro de 5 minutos desde su creación y el estado se puede consultar hasta 7 días después (**confirmar en la documentación vigente**). Así, quien salió de Webpay sin pagar puede reintentar en minutos y no queda bloqueado. Si la transacción quedó autorizada sin `commit` (el retorno nunca llegó), revisar en esa misma documentación cómo y hasta cuándo confirmarla.
 
 ## 5. Lo que Transbank exige y conviene tener resuelto
 
@@ -131,7 +135,7 @@ Cabecera `X-Token-Pago: <token>` (el mismo `token` de 4.1; sirve de clave de con
 
 ## 6. Cómo probar de punta a punta con la app
 
-1. Backend con `TBK_ENTORNO=integracion` y las credenciales de prueba, accesible por HTTPS (la app de producción no acepta `http`).
+1. Backend con `TBK_ENTORNO=integracion` y las credenciales de prueba, accesible por HTTPS (solo una compilación debug de la app acepta `http`; profile y release lo bloquean).
 2. Compilar la app apuntando a él: `flutter run --dart-define=PAGO_MODO=webpay --dart-define=API_URL=https://<host>/api/v1` (en una compilación release móvil el modo es siempre Webpay, así que basta `--dart-define=API_URL=…`; en la web el pago siempre es simulado).
 3. Casos: pago aprobado (VISA de prueba), rechazado (MASTERCARD), cancelar en Webpay, cerrar la app a mitad del pago y reabrirla, doble toque en «Pagar», cambiar un precio entre el carrito y el pago (`precios_cambiaron`), producto sin stock, apagar el backend (la app debe decir que no se cobró nada).
 4. Paso a producción: cambiar las tres variables de la sección 2 y repetir un pago real de monto bajo.

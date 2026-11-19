@@ -11,7 +11,7 @@
 - Tercer lote de imágenes integrado (ver `docs/ideas-nuevas-imagenes.md`, tercera tanda): banners con texto real dorado/morado sobre negro (`lib/ui/banners.dart`), ideas para tu mesa, foto en uso en la ficha, estados claro/oscuro, producto agotado, seguimiento. La bienvenida NO usa fotos de personas (feedback del usuario).
 - `docs/ideas-fotos.md`: lista de fotos e ilustraciones a producir.
 - Imágenes IA integradas (ZIP del usuario): 35 productos recortados, héroes, categorías, estados, bienvenida, atención y patrón de carga; ver `docs/ideas-nuevas-imagenes.md` (qué se usó, qué no y qué crear). Archivos en `assets/img/{p,hero,cat,estados,escenas,patrones}/`. Los ZIP originales están en Descargas; extraídos en la carpeta temporal.
-- Pruebas: `flutter test --concurrency=1` → 105 pasan en esa fecha (hoy la suite completa pasa 336; ver el resumen del pago al final). Si el runner de Windows cae, repetir.
+- Pruebas: `flutter test --concurrency=1` → 105 pasan en esa fecha (hoy la suite completa pasa 344; ver el resumen del pago al final). Si el runner de Windows cae, repetir.
 
 - Demo portátil para el cliente: `app_flutter/Sedyjo-Maqueta-Demo.zip` (carpeta `demo-cliente/`): doble clic en `Abrir-Maqueta.bat`. Para regenerarla: `flutter build web --release --no-web-resources-cdn`, copiar `build/web` a `demo-cliente/maqueta` y volver a comprimir. `?cliente=1` oculta el panel.
 
@@ -58,7 +58,8 @@ Comandos (dos terminales; el emulador de Android ve el equipo anfitrión como `1
 python tools/webpay_falso.py --puerto 8080            # añadir --precios-cambian para el caso 7
 flutter run --dart-define=PAGO_MODO=webpay --dart-define=API_URL=http://10.0.2.2:8080/api/v1
 ```
-El `http` solo funciona en debug (`android/app/src/debug/AndroidManifest.xml` permite tráfico sin cifrar; release no).
+El servidor escucha solo en `127.0.0.1` por defecto (el `10.0.2.2` del emulador llega a ese loopback del anfitrión). Con un teléfono físico: `python tools/webpay_falso.py --host 0.0.0.0 --puerto 8080` y `API_URL=http://<IP del equipo>:8080/api/v1` (queda expuesto a la red local: solo en una red de confianza).
+El `http` solo funciona en debug (`android/app/src/debug/AndroidManifest.xml` permite tráfico sin cifrar y el WebView solo acepta `http` en debug); profile y release lo bloquean.
 
 Casos manuales, todos **pendientes**:
 - [ ] 1. Comprar y «Aprobar» → círculo verde, pedido `SED-9000X`, comprobante visible, carrito vacío.
@@ -74,6 +75,7 @@ Comprobaciones del WebView en dispositivo real, también **pendientes**:
 - [ ] El `302` a `urlFin` llega a `onNavigationRequest` y se intercepta, en Android y en iOS.
 - [ ] El `POST` con cuerpo (`token_ws`) a la página de pago funciona en ambas plataformas.
 - [ ] «Reintentar» vuelve a hacer el `POST` (no un `GET` sin cuerpo).
+- [ ] Panel «No pudimos cargar Webpay»: si falla antes de que cargue ninguna página (p. ej. sin red al abrir), dice «No se te cobró nada. Revisa tu conexión…»; si falla después de que alguna página terminó de cargar (cortar la red ya dentro del formulario), dice «Si ya confirmaste el pago en tu banco, al cerrar revisaremos cómo quedó. Si no, no se te cobró nada.»
 - [ ] Los iframes de 3D Secure no los bloquea el filtro de esquemas (`about:srcdoc`, `blob:`, `data:`).
 - [ ] iOS no se puede probar en Windows: probar en un Mac con el backend real por `https` (el servidor de prueba es `http`) y antes de enviar a la App Store.
 
@@ -81,7 +83,7 @@ Comprobaciones del WebView en dispositivo real, también **pendientes**:
 - **Qué se hizo:** el pago ya no es solo una maqueta. La app tiene la integración con Webpay Plus a través de un backend (que todavía no existe) en `lib/pago/`: configuración por plataforma (`configuracion_pago.dart`), pasarelas simulada, no disponible y Webpay (`pasarela_pago.dart`, `pasarela_webpay.dart`), reglas de navegación del WebView (`navegacion_webpay.dart`), el recorrido completo (`flujo_pago.dart`) y su punto de entrada (`pago.dart`). Pantalla del WebView en `lib/pantallas/webpay.dart`; checkout, resultado del pago (aprobado, rechazado, cancelado, sin confirmar, con comprobante) y `Shell` (reanuda un pago pendiente al abrir la app) conectados a ese flujo; el pago pendiente se guarda en el teléfono (`lib/app/estado`). Paquetes nuevos: `webview_flutter` y `http`.
 - **Cómo se usa:** `PAGO_MODO` (`simulado` por defecto o `webpay`) y `API_URL` por `--dart-define`. Web: siempre simulado; móvil en release: siempre Webpay; debug: lo pedido. La app no lleva el código de comercio ni la llave de Transbank; pasar a producción es cambiar 3 variables en el backend, sin recompilar la app. Detalle en `docs/integraciones.md` («Pago con Webpay») y comandos en `README.md`.
 - **Para el backend:** `docs/backend-webpay.md` es el contrato (endpoints, cabeceras `Idempotency-Key` y `X-Token-Pago`, estados, `precios_cambiaron` con `total`, `urlFin`). Diseño y plan: `docs/superpowers/specs/` y `docs/superpowers/plans/` (`2026-11-16-pago-webpay-app*`). Servidor de prueba: `tools/webpay_falso.py` (solo desarrollo).
-- **Pruebas:** `flutter test --concurrency=1` → 336 pasan (suite completa; las de pago están en `test/pago_*_test.dart`). `flutter analyze` → 0 errores y 0 avisos (45 `info`: la deprecación de `package:flutter/material.dart` en todos los archivos y un `print` en `test/soporte_pantallas.dart`). `flutter build web --release --no-web-resources-cdn` compila.
+- **Pruebas:** `flutter test --concurrency=1` → 344 pasan (suite completa; las de pago están en `test/pago_*_test.dart`). `flutter analyze` → 0 errores y 0 avisos (45 `info`: la deprecación de `package:flutter/material.dart` en todos los archivos y un `print` en `test/soporte_pantallas.dart`). `flutter build web --release --no-web-resources-cdn` compila.
 - **Sin verificar en esta máquina:** `flutter build apk --debug` falla antes de compilar por un problema del entorno (el JDK 25 de Android Studio no logra abrir una conexión local: «Unable to establish loopback connection»; ocurre incluso con un programa Java mínimo). El plugin de WebView pide `minSdk` 24 y `flutter.minSdkVersion` ya vale 24, así que no hizo falta cambiarlo. Hay que repetir el build en otra máquina o con otro JDK.
 - **Pendiente:**
   - Lista manual de casos en emulador/dispositivo (sección anterior, «Pago con Webpay: verificación pendiente»).
