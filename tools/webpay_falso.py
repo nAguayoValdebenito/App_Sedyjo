@@ -10,14 +10,18 @@ No forma parte de `api/` (el backend real). Es seguro dejarlo en el repositorio
 justamente porque es inofensivo: solo biblioteca estándar y sin estado en disco.
 
 Uso:
-    python tools/webpay_falso.py [--puerto 8080] [--precios-cambian]
+    python tools/webpay_falso.py [--host 127.0.0.1] [--puerto 8080] [--precios-cambian]
 
+    --host H            dirección de escucha (por defecto 127.0.0.1: solo este
+                        equipo). Un teléfono físico en la misma red necesita
+                        `--host 0.0.0.0` (expone el servidor a toda la red local).
     --puerto N          puerto de escucha (por defecto 8080).
     --precios-cambian   la PRIMERA creación de pago responde 409
                         `precios_cambiaron` con total = totalVisto + 500; las
                         siguientes funcionan normal.
 
-Desde el emulador de Android el equipo anfitrión es 10.0.2.2:
+Desde el emulador de Android el equipo anfitrión es 10.0.2.2, que llega al
+127.0.0.1 del anfitrión (sirve el valor por defecto de --host):
     flutter run --dart-define=PAGO_MODO=webpay \\
                 --dart-define=API_URL=http://10.0.2.2:8080/api/v1
 
@@ -280,16 +284,23 @@ class Manejador(BaseHTTPRequestHandler):
 
 def main():
     ap = argparse.ArgumentParser(description='Servidor FALSO de Webpay (solo desarrollo, nunca desplegar).')
+    ap.add_argument('--host', default='127.0.0.1',
+                    help='dirección de escucha (por defecto 127.0.0.1, solo este equipo; '
+                         'un teléfono físico necesita --host 0.0.0.0)')
     ap.add_argument('--puerto', type=int, default=8080)
     ap.add_argument('--precios-cambian', action='store_true',
                     help='la primera creación responde 409 precios_cambiaron (total = visto + 500)')
     args = ap.parse_args()
     _opciones['precios_cambian'] = args.precios_cambian
 
-    servidor = ThreadingHTTPServer(('0.0.0.0', args.puerto), Manejador)
+    servidor = ThreadingHTTPServer((args.host, args.puerto), Manejador)
     print('=' * 64)
     print(' WEBPAY FALSO: solo desarrollo. No cobra nada. NO DESPLEGAR.')
-    print(f' Escuchando en 0.0.0.0:{args.puerto}  (emulador Android: http://10.0.2.2:{args.puerto}/api/v1)')
+    print(f' Escuchando en {args.host}:{args.puerto}  (emulador Android: http://10.0.2.2:{args.puerto}/api/v1)')
+    if args.host in ('127.0.0.1', 'localhost', '::1'):
+        print(' Solo este equipo (el emulador llega por 10.0.2.2). Telefono fisico: --host 0.0.0.0')
+    else:
+        print(' OJO: accesible desde la red local. Usalo solo en una red de confianza.')
     if args.precios_cambian:
         print(' Modo --precios-cambian: la primera creacion responde 409.')
     print(' Ctrl+C para detener.')
