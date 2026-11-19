@@ -76,3 +76,16 @@ Comprobaciones del WebView en dispositivo real, también **pendientes**:
 - [ ] «Reintentar» vuelve a hacer el `POST` (no un `GET` sin cuerpo).
 - [ ] Los iframes de 3D Secure no los bloquea el filtro de esquemas (`about:srcdoc`, `blob:`, `data:`).
 - [ ] iOS no se puede probar en Windows: probar en un Mac con el backend real por `https` (el servidor de prueba es `http`) y antes de enviar a la App Store.
+
+## Pago con Webpay en la app (16-18 nov 2026): resumen
+- **Qué se hizo:** el pago ya no es solo una maqueta. La app tiene la integración con Webpay Plus a través de un backend (que todavía no existe) en `lib/pago/`: configuración por plataforma (`configuracion_pago.dart`), pasarelas simulada, no disponible y Webpay (`pasarela_pago.dart`, `pasarela_webpay.dart`), reglas de navegación del WebView (`navegacion_webpay.dart`), el recorrido completo (`flujo_pago.dart`) y su punto de entrada (`pago.dart`). Pantalla del WebView en `lib/pantallas/webpay.dart`; checkout, resultado del pago (aprobado, rechazado, cancelado, sin confirmar, con comprobante) y `Shell` (reanuda un pago pendiente al abrir la app) conectados a ese flujo; el pago pendiente se guarda en el teléfono (`lib/app/estado`). Paquetes nuevos: `webview_flutter` y `http`.
+- **Cómo se usa:** `PAGO_MODO` (`simulado` por defecto o `webpay`) y `API_URL` por `--dart-define`. Web: siempre simulado; móvil en release: siempre Webpay; debug: lo pedido. La app no lleva el código de comercio ni la llave de Transbank; pasar a producción es cambiar 3 variables en el backend, sin recompilar la app. Detalle en `docs/integraciones.md` («Pago con Webpay») y comandos en `README.md`.
+- **Para el backend:** `docs/backend-webpay.md` es el contrato (endpoints, cabeceras `Idempotency-Key` y `X-Token-Pago`, estados, `precios_cambiaron` con `total`, `urlFin`). Diseño y plan: `docs/superpowers/specs/` y `docs/superpowers/plans/` (`2026-11-16-pago-webpay-app*`). Servidor de prueba: `tools/webpay_falso.py` (solo desarrollo).
+- **Pruebas:** `flutter test --concurrency=1` → 336 pasan (suite completa; las de pago están en `test/pago_*_test.dart`). `flutter analyze` → 0 errores y 0 avisos (45 `info`: la deprecación de `package:flutter/material.dart` en todos los archivos y un `print` en `test/soporte_pantallas.dart`). `flutter build web --release --no-web-resources-cdn` compila.
+- **Sin verificar en esta máquina:** `flutter build apk --debug` falla antes de compilar por un problema del entorno (el JDK 25 de Android Studio no logra abrir una conexión local: «Unable to establish loopback connection»; ocurre incluso con un programa Java mínimo). El plugin de WebView pide `minSdk` 24 y `flutter.minSdkVersion` ya vale 24, así que no hizo falta cambiarlo. Hay que repetir el build en otra máquina o con otro JDK.
+- **Pendiente:**
+  - Lista manual de casos en emulador/dispositivo (sección anterior, «Pago con Webpay: verificación pendiente»).
+  - Probar en iOS, que exige un Mac, con el backend real por `https`.
+  - Construir el backend según `docs/backend-webpay.md`.
+  - Validación de Transbank para pasar a producción (código de comercio y llave reales).
+  - Contenido del negocio que Transbank suele exigir visible: políticas de cambios y devoluciones, datos de contacto y logo de Webpay.
