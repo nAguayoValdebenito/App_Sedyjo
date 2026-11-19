@@ -28,6 +28,10 @@ class _WebpayPantallaState extends State<WebpayPantalla> {
   int _progreso = 0;
   bool _falla = false;
 
+  /// Alguna página ya terminó de cargar: el cliente pudo haber llegado a confirmar en su banco, así que
+  /// desde ese momento ya no se puede asegurar que no se cobró nada. No vuelve a `false` al reintentar.
+  bool _cargoAlgo = false;
+
   /// Ya se cerró la pantalla (o se está cerrando): evita devolver dos resultados.
   bool _terminado = false;
   bool _preguntando = false;
@@ -45,6 +49,7 @@ class _WebpayPantallaState extends State<WebpayPantalla> {
         onPageStarted: (_) {
           if (mounted && _progreso == 100) setState(() => _progreso = 0);
         },
+        onPageFinished: (_) => _cargoAlgo = true,
         onWebResourceError: (e) {
           // Solo importa si falló la página principal; un recurso suelto (imagen, script) no la invalida.
           if (e.isForMainFrame == true && mounted && !_terminado) setState(() => _falla = true);
@@ -185,7 +190,12 @@ class _WebpayPantallaState extends State<WebpayPantalla> {
             const SizedBox(height: Esp.x3),
             Semantics(liveRegion: true, header: true, child: Text('No pudimos cargar Webpay', style: T.titulo2)),
             const SizedBox(height: Esp.x2),
-            Text('No se te cobró nada. Revisa tu conexión e inténtalo otra vez.', style: T.cuerpo.copyWith(color: C.grisMedio)),
+            Text(
+              _cargoAlgo
+                  ? 'Si ya confirmaste el pago en tu banco, al cerrar revisaremos cómo quedó. Si no, no se te cobró nada.'
+                  : 'No se te cobró nada. Revisa tu conexión e inténtalo otra vez.',
+              style: T.cuerpo.copyWith(color: C.grisMedio),
+            ),
             const SizedBox(height: Esp.x6),
             Boton('Reintentar', icono: LucideIcons.refreshCw, onTap: _cargar),
             const SizedBox(height: Esp.x3),
