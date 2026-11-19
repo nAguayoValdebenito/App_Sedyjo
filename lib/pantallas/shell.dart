@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../pago/pago.dart';
 import '../ui/componentes.dart';
 import 'carrito.dart';
 import 'categorias.dart';
@@ -45,6 +46,10 @@ class _ShellState extends State<Shell> {
       _programarPeriodico();
     });
     estado.addListener(_reprogramar);
+    // Si al cerrarse la app quedó un pago sin resolver, se retoma apenas se ve la tienda.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) flujoPago.reanudarSiHay(context);
+    });
   }
 
   /// Respeta el momento: si el usuario está pagando, mirando su carrito o su cuenta, espera al próximo turno.

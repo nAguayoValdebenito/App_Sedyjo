@@ -11,6 +11,7 @@ import 'package:sedyjo_app/pago/modelos_pago.dart';
 import 'package:sedyjo_app/pago/pago.dart';
 import 'package:sedyjo_app/pago/pasarela_pago.dart';
 import 'package:sedyjo_app/pago/pasarela_webpay.dart';
+import 'package:sedyjo_app/pantallas/pago_resultado.dart' show ResultadoPagoPantalla;
 import 'package:sedyjo_app/ui/componentes.dart';
 
 const _solicitud = SolicitudPago(
@@ -36,14 +37,19 @@ const _aprobado = ResultadoPago.aprobado(numero: 'SED-10482', total: 12990, corr
 /// Pasarela de mentira: lanza los errores pedidos en los primeros `iniciar`, luego inicia
 /// el pedido SED-10482; `resultado` responde lo pedido y cuenta las consultas.
 class FakePasarela implements PasarelaPago {
-  FakePasarela({this.errores = const [], this.respuesta = _aprobado, this.conRedireccion = true, this.puerta});
+  FakePasarela({this.errores = const [], this.respuesta = _aprobado, this.conRedireccion = true, this.puerta, this.falla});
 
   final List<ErrorPago> errores;
-  final ResultadoPago respuesta;
+
+  /// Lo que responde `resultado`; se puede cambiar a mitad de una prueba («Revisar de nuevo»).
+  ResultadoPago respuesta;
   final bool conRedireccion;
 
   /// Si existe, `iniciar` espera a que se complete (para probar el doble toque).
   final Completer<void>? puerta;
+
+  /// Si existe, el primer `iniciar` lanza esto: un error inesperado, no un [ErrorPago].
+  final Object? falla;
 
   final List<SolicitudPago> iniciadas = [];
   final List<RetornoPago> retornos = [];
@@ -53,6 +59,7 @@ class FakePasarela implements PasarelaPago {
   Future<InicioPago> iniciar(SolicitudPago solicitud) async {
     iniciadas.add(solicitud);
     if (puerta != null) await puerta!.future;
+    if (falla != null && iniciadas.length == 1) throw falla!;
     if (iniciadas.length <= errores.length) throw errores[iniciadas.length - 1];
     return InicioPago(
       PagoPendiente(numero: 'SED-10482', token: 'tok-123', total: solicitud.totalVisto, solicitud: solicitud, creado: DateTime.now()),
@@ -87,16 +94,39 @@ class FakeWebpay {
   }
 }
 
-Widget _app(FlujoPago flujo, {SolicitudPago solicitud = _solicitud}) => MaterialApp(
+/// Cuenta las rutas que se empujan, para saber si el flujo navegó o no.
+class _Observador extends NavigatorObserver {
+  int empujes = 0;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => empujes++;
+}
+
+/// «Pagar» hace lo del checkout; «Reanudar» lo que hace el `Shell` al abrir la app.
+Widget _app(FlujoPago flujo, {SolicitudPago solicitud = _solicitud, NavigatorObserver? observador}) => MaterialApp(
       theme: construirTema(),
+      navigatorObservers: [?observador],
       home: Scaffold(
         body: Builder(
           builder: (ctx) => Center(
-            child: ElevatedButton(onPressed: () => flujo.pagar(ctx, solicitud), child: const Text('Pagar')),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ElevatedButton(onPressed: () => flujo.pagar(ctx, solicitud), child: const Text('Pagar')),
+              ElevatedButton(onPressed: () => flujo.reanudarSiHay(ctx), child: const Text('Reanudar')),
+            ]),
           ),
         ),
       ),
     );
+
+/// Un pendiente como el que deja `pagar` antes de abrir Webpay, creado en [creado] (por defecto, ahora).
+PagoPendiente _pendiente({DateTime? creado}) =>
+    PagoPendiente(numero: 'SED-10482', token: 'tok-123', total: 12990, solicitud: _solicitud, creado: creado ?? DateTime.now());
+
+/// Toca «Reanudar» y deja correr la pantalla de resultado hasta que muestra el mensaje final.
+Future<void> reanudarYEsperar(WidgetTester t) async {
+  await t.tap(find.text('Reanudar'));
+  await esperar(t, 4500);
+}
 
 Future<void> esperar(WidgetTester t, int ms) async {
   for (var i = 0; i < ms ~/ 100; i++) {
@@ -340,6 +370,205 @@ void main() {
     expect(pasarela.iniciadas, hasLength(1));
     expect(webpay.llamadas, 1);
     expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    await t.pumpWidget(const SizedBox());
+  });
+
+  // ── Reanudar un pago pendiente al abrir la app (lo que llama el Shell) ──
+
+  testWidgets('11. reanudar: pendiente guardado y la pasarela responde aprobado → pedido con las líneas guardadas', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente());
+    final pasarela = FakePasarela();
+    final webpay = FakeWebpay();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call)));
+
+    await reanudarYEsperar(t);
+
+    expect(pasarela.iniciadas, isEmpty);
+    expect(webpay.llamadas, 0);
+    expect(pasarela.retornos, [RetornoPago.desconocido]);
+    expect(estado.pedidos.first.numero, 'SED-10482');
+    expect(estado.pedidos.first.lineas, {1: 2});
+    expect(estado.pedidos.first.correo, 'ana@correo.cl');
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    expect(estado.carrito, {2: 1});
+    expect(estado.pagoPendiente, isNull);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('12. reanudar: el pedido ya estaba registrado (la app murió antes de limpiar) → no se duplica', (t) async {
+    telefono(t);
+    // El pago se aprobó y el pedido quedó registrado (y el carrito descontado), pero el pendiente no alcanzó a borrarse.
+    estado.registrarPedido(numero: 'SED-10482', lineas: {1: 2}, correo: 'ana@correo.cl', direccion: 'Los Aromos 1234, Concepción');
+    estado.guardarPagoPendiente(_pendiente());
+    final antes = estado.pedidos.length;
+    final pasarela = FakePasarela();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call)));
+
+    await reanudarYEsperar(t);
+
+    expect(pasarela.consultas, 1);
+    expect(estado.pedidos, hasLength(antes));
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    expect(estado.carrito, {2: 1}, reason: 'el carrito no se descuenta dos veces');
+    expect(estado.pagoPendiente, isNull);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('13. reanudar: pendiente de hace 25 h → se limpia sin consultar ni navegar', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente(creado: DateTime.now().subtract(const Duration(hours: 25))));
+    final antes = estado.pedidos.length;
+    final pasarela = FakePasarela();
+    final observador = _Observador();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call), observador: observador));
+    final empujesIniciales = observador.empujes;
+
+    await reanudarYEsperar(t);
+
+    expect(pasarela.consultas, 0);
+    expect(estado.pagoPendiente, isNull);
+    expect(observador.empujes, empujesIniciales, reason: 'no se empujó ninguna ruta');
+    expect(find.byType(ResultadoPagoPantalla, skipOffstage: false), findsNothing);
+    expect(estado.pedidos, hasLength(antes));
+    expect(estado.carrito, {1: 2, 2: 1});
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('14. reanudar: sin pendiente no se consulta ni se empuja ninguna ruta', (t) async {
+    telefono(t);
+    final pasarela = FakePasarela();
+    final observador = _Observador();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call), observador: observador));
+    final empujesIniciales = observador.empujes;
+
+    await reanudarYEsperar(t);
+
+    expect(pasarela.consultas, 0);
+    expect(observador.empujes, empujesIniciales);
+    expect(find.byType(ResultadoPagoPantalla, skipOffstage: false), findsNothing);
+    expect(estado.pagoPendiente, isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('15a. reanudar: sin confirmar y «Revisar de nuevo» → se consulta otra vez y, si ya está aprobado, se ve el pedido', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente());
+    final pasarela = FakePasarela(respuesta: const ResultadoPago.sinConfirmar());
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call)));
+
+    await reanudarYEsperar(t);
+
+    expect(find.text('Estamos confirmando tu pago'), findsOneWidget);
+    expect(estado.pagoPendiente, isNotNull, reason: 'sin confirmar conserva el pendiente');
+    expect(pasarela.consultas, 1);
+
+    pasarela.respuesta = _aprobado;
+    await t.tap(find.widgetWithText(Boton, 'Revisar de nuevo'));
+    await esperar(t, 4500);
+
+    expect(pasarela.retornos, [RetornoPago.desconocido, RetornoPago.desconocido]);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    expect(find.byType(ResultadoPagoPantalla, skipOffstage: false), findsOneWidget, reason: 'la pantalla anterior se cerró');
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    expect(estado.pagoPendiente, isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('15b. pagar: sin confirmar y «Revisar de nuevo» → se consulta otra vez y, si ya está aprobado, se ve el pedido', (t) async {
+    telefono(t);
+    final pasarela = FakePasarela(respuesta: const ResultadoPago.sinConfirmar());
+    final webpay = FakeWebpay();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: webpay.call)));
+
+    await pagarYEsperar(t);
+
+    expect(find.text('Estamos confirmando tu pago'), findsOneWidget);
+    expect(estado.pagoPendiente, isNotNull);
+
+    pasarela.respuesta = _aprobado;
+    await t.tap(find.widgetWithText(Boton, 'Revisar de nuevo'));
+    await esperar(t, 4500);
+
+    expect(pasarela.iniciadas, hasLength(1));
+    expect(webpay.llamadas, 1);
+    expect(pasarela.retornos, [RetornoPago.completado, RetornoPago.desconocido]);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    expect(find.byType(ResultadoPagoPantalla, skipOffstage: false), findsOneWidget, reason: 'la pantalla anterior se cerró');
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    expect(estado.carrito, {2: 1});
+    expect(estado.pagoPendiente, isNull);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('16. reanudar dos veces casi a la vez: una sola consulta y una sola pantalla', (t) async {
+    telefono(t);
+    estado.guardarPagoPendiente(_pendiente());
+    final pasarela = FakePasarela();
+    final observador = _Observador();
+    final flujo = FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call);
+    await t.pumpWidget(_app(flujo, observador: observador));
+    final empujesIniciales = observador.empujes;
+
+    // Directo y no con dos toques: tras el primer push el Navigator absorbe los toques durante la transición.
+    final ctx = t.element(find.text('Reanudar'));
+    unawaited(flujo.reanudarSiHay(ctx));
+    unawaited(flujo.reanudarSiHay(ctx));
+    await esperar(t, 4500);
+
+    expect(pasarela.consultas, 1);
+    expect(observador.empujes, empujesIniciales + 1);
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('17. reanudar mientras un pago está en Webpay: se ignora y el pago termina normal', (t) async {
+    telefono(t);
+    final enWebpay = Completer<RetornoPago>();
+    final pasarela = FakePasarela();
+    final observador = _Observador();
+    await t.pumpWidget(_app(FlujoPago(pasarela: pasarela, abrirWebpay: (_, _) => enWebpay.future), observador: observador));
+    final empujesIniciales = observador.empujes;
+
+    await t.tap(find.text('Pagar'));
+    await esperar(t, 500);
+    expect(estado.pagoPendiente, isNotNull, reason: 'el pendiente ya está guardado mientras el cliente está en Webpay');
+
+    await t.tap(find.text('Reanudar'));
+    await esperar(t, 500);
+    expect(pasarela.consultas, 0, reason: 'el Shell no debe retomar un pago que sigue en curso');
+    expect(observador.empujes, empujesIniciales);
+
+    enWebpay.complete(RetornoPago.completado);
+    await esperar(t, 4500);
+
+    expect(pasarela.retornos, [RetornoPago.completado]);
+    expect(observador.empujes, empujesIniciales + 1);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
+    expect(estado.pedidos.where((p) => p.numero == 'SED-10482'), hasLength(1));
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('18. un error inesperado no deja el flujo trabado: el siguiente pagar funciona', (t) async {
+    telefono(t);
+    final pasarela = FakePasarela(falla: StateError('se cayó algo'));
+    final flujo = FlujoPago(pasarela: pasarela, abrirWebpay: FakeWebpay().call);
+    await t.pumpWidget(_app(flujo));
+
+    Object? error;
+    flujo.pagar(t.element(find.text('Pagar')), _solicitud).catchError((Object e) {
+      error = e;
+    });
+    await t.pump();
+    expect(error, isA<StateError>());
+
+    await pagarYEsperar(t);
+
+    expect(pasarela.iniciadas, hasLength(2));
+    expect(pasarela.consultas, 1);
+    expect(find.text('Seguir mi pedido'), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 

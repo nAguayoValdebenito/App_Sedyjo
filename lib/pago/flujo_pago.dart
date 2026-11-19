@@ -27,7 +27,8 @@ class FlujoPago {
   final PasarelaPago pasarela;
   final Future<RetornoPago> Function(BuildContext, Redireccion) _abrirWebpay;
 
-  /// Hay un pago andando en este flujo: un segundo toque se ignora.
+  /// Hay un pago andando en este flujo (pagando o retomando un pendiente, con su pantalla de resultado
+  /// incluida): un segundo toque, o el `Shell` al abrir la app, se ignora. Se suelta siempre en un `finally`.
   bool _enCurso = false;
 
   /// Empuja la página de Webpay; si se cierra sin devolver nada, cuenta como cerrada.
@@ -44,7 +45,8 @@ class FlujoPago {
     _enCurso = true;
     try {
       if (estado.pagoPendiente != null) {
-        await reanudarSiHay(context);
+        // Sin pasar por `reanudarSiHay`: su guarda vería este mismo pago en curso y no haría nada.
+        await _reanudar(context);
         return;
       }
       await _pagar(context, solicitud);
@@ -53,14 +55,47 @@ class FlujoPago {
     }
   }
 
-  /// Si quedó un pago sin resolver, consulta cómo terminó y muestra el resultado.
-  // TODO(Tarea 9): vencimiento de 24 h, «Revisar de nuevo» y llamada desde el Shell.
+  /// Si quedó un pago sin resolver, consulta cómo terminó y muestra el resultado. Lo llama el `Shell` al abrir la app.
+  /// Sin pendiente no hace nada; si venció (más de 24 h) lo olvida sin consultar ni navegar.
+  /// Si ya hay otro flujo en curso, la llamada se ignora.
   Future<void> reanudarSiHay(BuildContext context) async {
+    if (_enCurso) return;
+    _enCurso = true;
+    try {
+      await _reanudar(context);
+    } finally {
+      _enCurso = false;
+    }
+  }
+
+  /// `reanudarSiHay` sin la guarda: quien llama ya la tiene tomada.
+  Future<void> _reanudar(BuildContext context) async {
     final p = estado.pagoPendiente;
-    if (p == null || !context.mounted) return;
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ResultadoPagoPantalla(procesar: () => _cerrar(p, RetornoPago.desconocido)),
-    ));
+    if (p == null) return;
+    if (p.vencido(DateTime.now())) {
+      estado.limpiarPagoPendiente();
+      return;
+    }
+    if (!context.mounted) return;
+    await _mostrarResultado(context, p, RetornoPago.desconocido);
+  }
+
+  /// Muestra la pantalla de resultado, que consulta a la pasarela y deja todo en orden.
+  /// «Revisar de nuevo» (solo en «sin confirmar») cierra la pantalla y retoma el pendiente otra vez, con una
+  /// pantalla nueva. Se hace aquí, dentro del mismo flujo: la guarda sigue tomada y no bloquea el reintento.
+  Future<void> _mostrarResultado(BuildContext context, PagoPendiente p, RetornoPago retorno) async {
+    late final MaterialPageRoute<bool> ruta;
+    ruta = MaterialPageRoute<bool>(
+      builder: (_) => ResultadoPagoPantalla(
+        procesar: () => _cerrar(p, retorno),
+        // Solo si esta pantalla sigue arriba: un doble toque no debe cerrar también la de abajo.
+        alRevisarDeNuevo: () {
+          if (ruta.isCurrent) ruta.navigator?.pop(true);
+        },
+      ),
+    );
+    final revisar = await Navigator.of(context).push(ruta);
+    if (revisar == true && context.mounted) await _reanudar(context);
   }
 
   Future<void> _pagar(BuildContext context, SolicitudPago solicitud) async {
@@ -77,9 +112,7 @@ class FlujoPago {
     // Sin pantalla donde mostrar el resultado, el pendiente queda guardado para retomarlo después.
     if (!context.mounted) return;
 
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ResultadoPagoPantalla(procesar: () => _cerrar(inicio.pendiente, retorno)),
-    ));
+    await _mostrarResultado(context, inicio.pendiente, retorno);
   }
 
   /// Inicia el pago en la pasarela. Si cambiaron los precios, pregunta y reintenta una vez con el total nuevo.
