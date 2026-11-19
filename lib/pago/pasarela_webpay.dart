@@ -23,6 +23,7 @@ class PasarelaWebpay implements PasarelaPago {
     http.Client? cliente,
     Future<void> Function(Duration)? esperar,
     this.tiempoLimite = const Duration(seconds: 15),
+    this.tiempoLimiteConsulta = const Duration(seconds: 5),
     this.esperas = const [
       Duration.zero,
       Duration(seconds: 1),
@@ -41,8 +42,11 @@ class PasarelaWebpay implements PasarelaPago {
   final http.Client _cliente;
   final Future<void> Function(Duration) _esperar;
 
-  /// Tope de cada petición.
+  /// Tope de cada intento de `iniciar`.
   final Duration tiempoLimite;
+
+  /// Tope de cada consulta de estado: con 8 consultas el peor caso queda en unos 56 s (40 s de topes y 16 s de pausas).
+  final Duration tiempoLimiteConsulta;
 
   /// Pausa previa a cada consulta de estado; su largo es el número de consultas.
   final List<Duration> esperas;
@@ -67,12 +71,12 @@ class PasarelaWebpay implements PasarelaPago {
         )
         .timeout(tiempoLimite);
 
+    // La petición solo puede lanzar excepciones de transporte (tiempo agotado, sin red, TLS…):
+    // todas se reintentan una vez, con la misma clave.
     http.Response respuesta;
     try {
       respuesta = await intento();
-    } on TimeoutException {
-      respuesta = await _reintentar(intento);
-    } on http.ClientException {
+    } on Exception {
       respuesta = await _reintentar(intento);
     }
 
@@ -92,9 +96,7 @@ class PasarelaWebpay implements PasarelaPago {
   Future<http.Response> _reintentar(Future<http.Response> Function() intento) async {
     try {
       return await intento();
-    } on TimeoutException {
-      throw const ErrorPago('sin_conexion', _mensajeSinConexion);
-    } on http.ClientException {
+    } on Exception {
       throw const ErrorPago('sin_conexion', _mensajeSinConexion);
     }
   }
@@ -110,14 +112,16 @@ class PasarelaWebpay implements PasarelaPago {
         respuesta = await _cliente.get(url, headers: {
           'Accept': 'application/json',
           'X-Token-Pago': pendiente.token,
-        }).timeout(tiempoLimite);
+        }).timeout(tiempoLimiteConsulta);
       } on Exception {
         continue; // sin red o lento: no es un rechazo, se vuelve a preguntar
       }
 
       if (respuesta.statusCode == 404) {
-        // El servidor no conoce ese pedido (o el token): no hay cobro posible.
-        return const ResultadoPago.rechazado();
+        // Solo un 404 del backend (con su cuerpo de error) dice que no conoce ese pedido o el token: no hay
+        // cobro posible. Un 404 sin ese cuerpo (un proxy, una ruta mal configurada) es falta de respuesta.
+        if (_esErrorDelBackend(respuesta)) return const ResultadoPago.rechazado();
+        continue;
       }
       if (respuesta.statusCode != 200) continue;
 
@@ -159,6 +163,18 @@ class PasarelaWebpay implements PasarelaPago {
     }
   }
 
+  /// La forma de error del contrato: un objeto JSON con `error` de texto no vacío.
+  bool _esErrorDelBackend(http.Response r) {
+    try {
+      final j = jsonDecode(utf8.decode(r.bodyBytes));
+      if (j is Map) {
+        final texto = j['error'];
+        return texto is String && texto.isNotEmpty;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   bool _esUrlWeb(Uri u) => (u.scheme == 'https' || u.scheme == 'http') && u.host.isNotEmpty;
 
   ErrorPago _errorDelServidor(http.Response r) {
@@ -191,14 +207,14 @@ class PasarelaWebpay implements PasarelaPago {
 
     switch (estadoServidor) {
       case 'aprobado':
-        final total = d['total'];
-        final correo = d['correo'];
-        if (total is! int || correo is! String) return null;
+        // Decide `estado`; los demás campos son para mostrar y, si vienen mal, se usan los del pedido.
+        final t = d['total'];
+        final c = d['correo'];
         return ResultadoPago.aprobado(
           numero: pendiente.numero,
-          total: total,
-          correo: correo,
-          retiro: d['retiro'] == true,
+          total: (t is num && t.isFinite) ? t.toInt() : pendiente.total,
+          correo: (c is String && c.isNotEmpty) ? c : pendiente.solicitud.correo,
+          retiro: d['retiro'] is bool ? d['retiro'] as bool : pendiente.solicitud.retiro,
           comprobante: _leerComprobante(d['comprobante']),
         );
       case 'rechazado':
@@ -211,21 +227,26 @@ class PasarelaWebpay implements PasarelaPago {
     }
   }
 
+  /// Un comprobante que no se puede leer no invalida el pago: se muestra sin él.
   ComprobantePago? _leerComprobante(Object? c) {
-    if (c is! Map) return null;
-    final codigo = c['codigoAutorizacion'];
-    final ultimos = c['tarjetaUltimos4'];
-    final tipo = c['tipoPago'];
-    final cuotas = c['cuotas'];
-    if (codigo is! String || ultimos is! String || tipo is! String || cuotas is! num) return null;
-    final fecha = c['fecha'];
-    return ComprobantePago(
-      codigoAutorizacion: codigo,
-      tarjetaUltimos4: ultimos,
-      tipoPago: tipo,
-      cuotas: cuotas.toInt(),
-      fecha: fecha is String ? DateTime.tryParse(fecha) : null,
-    );
+    try {
+      if (c is! Map) return null;
+      final codigo = c['codigoAutorizacion'];
+      final ultimos = c['tarjetaUltimos4'];
+      final tipo = c['tipoPago'];
+      final cuotas = c['cuotas'];
+      if (codigo is! String || ultimos is! String || tipo is! String || cuotas is! num) return null;
+      final fecha = c['fecha'];
+      return ComprobantePago(
+        codigoAutorizacion: codigo,
+        tarjetaUltimos4: ultimos,
+        tipoPago: tipo,
+        cuotas: cuotas.toInt(), // lanza con infinito o NaN (p. ej. 1e400)
+        fecha: fecha is String ? DateTime.tryParse(fecha) : null,
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 32 caracteres hexadecimales (128 bits) de `Random.secure`.

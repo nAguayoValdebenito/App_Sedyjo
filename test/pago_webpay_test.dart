@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show HandshakeException;
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -162,6 +163,21 @@ void main() {
       expect(peticiones500, hasLength(1), reason: 'una respuesta 5xx no se reintenta');
     });
 
+    test('dos fallos TLS (HandshakeException) seguidos: un reintento con la misma clave y luego sin_conexion', () async {
+      final peticiones = <http.Request>[];
+      final pasarela = _pasarela(_secuencia([const HandshakeException('certificado')], peticiones));
+
+      await expectLater(
+        pasarela.iniciar(_solicitud),
+        throwsA(isA<ErrorPago>()
+            .having((e) => e.codigo, 'codigo', 'sin_conexion')
+            .having((e) => e.mensaje, 'mensaje', 'No pudimos conectar. Revisa tu conexión: no se cobró nada.')),
+      );
+      expect(peticiones, hasLength(2), reason: 'un solo reintento');
+      expect(peticiones[0].headers['Idempotency-Key'], matches(RegExp(r'^[0-9a-f]{32}$')));
+      expect(peticiones[1].headers['Idempotency-Key'], peticiones[0].headers['Idempotency-Key']);
+    });
+
     test('un 2xx ilegible o sin campos es error de servidor', () async {
       for (final respuesta in [
         http.Response('<html>no es json</html>', 200),
@@ -242,10 +258,36 @@ void main() {
       expect(peticiones, hasLength(esperas.length));
     });
 
-    test('404 es rechazado; 503 y luego aprobado es aprobado; estado desconocido es sinConfirmar', () async {
-      final noConocido = await _pasarela(_secuencia([http.Response('no', 404)], []))
-          .resultado(_pendiente(), RetornoPago.completado);
+    test('una consulta que nunca responde se corta con su propio tope: sinConfirmar tras esperas.length intentos', () async {
+      var intentos = 0;
+      final colgado = MockClient((_) {
+        intentos++;
+        return Completer<http.Response>().future; // nunca completa
+      });
+      final esperas = const [Duration.zero, Duration(seconds: 1), Duration(seconds: 1), Duration(seconds: 2)];
+      final pasarela = PasarelaWebpay(
+        apiUrl: _api,
+        cliente: colgado,
+        esperar: (_) async {},
+        esperas: esperas,
+        tiempoLimite: const Duration(hours: 1), // el de `iniciar`: la consulta no debe usarlo
+        tiempoLimiteConsulta: const Duration(milliseconds: 10),
+      );
+
+      final r = await pasarela.resultado(_pendiente(), RetornoPago.completado);
+
+      expect(r.aprobado, isFalse);
+      expect(r.motivo, MotivoNoPago.sinConfirmar);
+      expect(intentos, esperas.length);
+    }, timeout: const Timeout(Duration(seconds: 10)));
+
+    test('404 del backend es rechazado; 503 y luego aprobado es aprobado; estado desconocido es sinConfirmar', () async {
+      final peticiones404 = <http.Request>[];
+      final noConocido = await _pasarela(_secuencia([
+        _json(404, {'error': 'Pedido no encontrado.', 'code': 'no_encontrado'}),
+      ], peticiones404)).resultado(_pendiente(), RetornoPago.completado);
       expect(noConocido.motivo, MotivoNoPago.rechazado);
+      expect(peticiones404, hasLength(1), reason: 'un 404 del backend decide de inmediato');
 
       final peticiones = <http.Request>[];
       final recupera = await _pasarela(_secuencia([http.Response('caido', 503), _estado('aprobado')], peticiones))
@@ -259,16 +301,72 @@ void main() {
       expect(raro.motivo, MotivoNoPago.sinConfirmar);
     });
 
+    test('404 con cuerpo HTML o vacío (un proxy, no el backend) sigue consultando y termina en sinConfirmar', () async {
+      for (final respuesta in [
+        http.Response('<html><body>404 Not Found</body></html>', 404, headers: {'content-type': 'text/html'}),
+        http.Response('', 404),
+        _json(404, {'mensaje': 'otra forma'}),
+        _json(404, {'error': ''}),
+      ]) {
+        final peticiones = <http.Request>[];
+        final r = await _pasarela(_secuencia([respuesta], peticiones)).resultado(_pendiente(), RetornoPago.completado);
+
+        expect(r.aprobado, isFalse, reason: respuesta.body);
+        expect(r.motivo, MotivoNoPago.sinConfirmar, reason: respuesta.body);
+        expect(peticiones, hasLength(4), reason: 'se agotan las consultas: ${respuesta.body}');
+      }
+    });
+
     test('un error de red o una respuesta ilegible no es rechazo: sigue y termina sinConfirmar', () async {
       final r = await _pasarela(_secuencia([
         http.ClientException('sin red'),
         http.Response('<html>', 200),
         _json(200, {'data': 'raro'}),
-        _json(200, {'data': {'estado': 'aprobado', 'total': 'x'}}),
+        _json(200, {'data': {'estado': 7}}),
       ], [])).resultado(_pendiente(), RetornoPago.completado);
 
       expect(r.aprobado, isFalse);
       expect(r.motivo, MotivoNoPago.sinConfirmar);
+    });
+
+    test('aprobado sin total/correo, o con total 15990.0, es aprobado con los datos del pendiente', () async {
+      final sinDatos = await _pasarela(_secuencia([
+        _json(200, {'data': {'numero': 'SED-10482', 'estado': 'aprobado'}}),
+      ], [])).resultado(_pendiente(), RetornoPago.completado);
+      expect(sinDatos.aprobado, isTrue);
+      expect(sinDatos.numero, 'SED-10482');
+      expect(sinDatos.total, 12140, reason: 'sin total, el del pendiente');
+      expect(sinDatos.correo, 'maria@correo.cl', reason: 'sin correo, el de la solicitud');
+      expect(sinDatos.retiro, isFalse, reason: 'sin retiro, el de la solicitud');
+
+      final malTipados = await _pasarela(_secuencia([
+        _json(200, {'data': {'estado': 'aprobado', 'total': 'x', 'correo': 7, 'retiro': 'no'}}),
+      ], [])).resultado(_pendiente(), RetornoPago.completado);
+      expect(malTipados.aprobado, isTrue);
+      expect(malTipados.total, 12140);
+      expect(malTipados.correo, 'maria@correo.cl');
+      expect(malTipados.retiro, isFalse);
+
+      final decimal = await _pasarela(_secuencia([
+        _json(200, {'data': {'numero': 'SED-10482', 'estado': 'aprobado', 'total': 15990.0, 'correo': ''}}),
+      ], [])).resultado(_pendiente(), RetornoPago.completado);
+      expect(decimal.aprobado, isTrue);
+      expect(decimal.total, 15990);
+      expect(decimal.correo, 'maria@correo.cl', reason: 'un correo vacío no sirve: el de la solicitud');
+    });
+
+    test('comprobante con cuotas 1e400 → aprobado sin comprobante', () async {
+      // 1e400 no cabe en un double: se lee como infinito y `toInt()` lanzaría.
+      final cuerpo = '{"data":{"numero":"SED-10482","estado":"aprobado","total":1e400,"correo":"maria@correo.cl",'
+          '"retiro":false,"comprobante":{"codigoAutorizacion":"1213","tarjetaUltimos4":"6623",'
+          '"tipoPago":"Crédito","cuotas":1e400}}}';
+      final r = await _pasarela(_secuencia([
+        http.Response.bytes(utf8.encode(cuerpo), 200, headers: {'content-type': 'application/json; charset=utf-8'}),
+      ], [])).resultado(_pendiente(), RetornoPago.completado);
+
+      expect(r.aprobado, isTrue);
+      expect(r.total, 12140, reason: 'un total infinito no sirve: el del pendiente');
+      expect(r.comprobante, isNull);
     });
   });
 }
