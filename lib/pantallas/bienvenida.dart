@@ -7,19 +7,23 @@ import '../ui/componentes.dart';
 import 'auth.dart';
 import 'shell.dart';
 
+/// Entra a la tienda por la pestaña de inicio, reemplazando la pantalla actual. La usa la bienvenida y también la
+/// carga cuando hay un pago por confirmar (la tienda lo reanuda al abrirse).
+void entrarALaTienda(BuildContext context) {
+  estado.marcarVisitado();
+  estado.pestana = 0;
+  Navigator.of(context).pushReplacement(PageRouteBuilder(
+    transitionDuration: dur(context, 400),
+    pageBuilder: (_, _, _) => const Shell(),
+    transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
+  ));
+}
+
 /// Primera pantalla tras la carga: elegir cómo entrar. La compra como invitado es la opción principal.
 class BienvenidaPantalla extends StatelessWidget {
   const BienvenidaPantalla({super.key});
 
-  void _entrar(BuildContext context) {
-    estado.marcarVisitado();
-    estado.pestana = 0;
-    Navigator.of(context).pushReplacement(PageRouteBuilder(
-      transitionDuration: dur(context, 400),
-      pageBuilder: (_, _, _) => const Shell(),
-      transitionsBuilder: (_, a, _, child) => FadeTransition(opacity: a, child: child),
-    ));
-  }
+  void _entrar(BuildContext context) => entrarALaTienda(context);
 
   @override
   Widget build(BuildContext context) {

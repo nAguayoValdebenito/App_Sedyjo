@@ -83,9 +83,9 @@ Comprobaciones del WebView:
 
 Hallazgos de la prueba en emulador (ninguno bloquea; quedan para revisar):
 1. **Salir de Webpay sin pagar** deja al cliente en «Estamos confirmando tu pago… No pagues de nuevo todavía» hasta que el backend marque ese pedido como expirado (o cancelado). Ya está descrito en `docs/backend-webpay.md`: el backend debe expirar rápido los pagos abandonados, o quien se arrepiente no puede reintentar.
-2. La pantalla «Estamos confirmando tu pago» usa la imagen de tarjeta con triángulo rojo de alerta, que parece decir «falló» cuando el pago pudo haberse cobrado. Conviene una imagen neutra.
-3. Tras matar la app, al reabrirla aparece primero la pantalla de bienvenida; la reanudación del pago empieza recién al entrar a la tienda con «Seguir comprando».
-4. En el resultado aprobado, el comprobante queda parcialmente tapado por los botones (hay que bajar para verlo completo) y el número de pedido aparece dos veces (panel verde y comprobante).
+2. ~~La pantalla «Estamos confirmando tu pago» usaba la tarjeta con triángulo rojo de alerta, que parece decir «falló» cuando el pago pudo haberse cobrado.~~ **Resuelto (23 nov 2026):** ahora lleva una ilustración propia (`lib/ui/ilustracion_pago.dart`) con la tarjeta azul y un reloj, y el sello del círculo pasó de «!» gris a un reloj azul. «Cancelaste el pago» tampoco es un error: tarjeta apagada con una cruz gris y sello gris. La alerta roja queda solo para el pago que de verdad falló.
+3. ~~Tras matar la app, al reabrirla aparecía primero la bienvenida y la reanudación empezaba recién al entrar a la tienda.~~ **Resuelto:** si hay un pago por confirmar, la carga entra directo a la tienda (`entrarALaTienda`) y el pago se retoma sin pasar por la bienvenida.
+4. ~~En el resultado aprobado, el comprobante quedaba parcialmente tapado por los botones y el número de pedido aparecía dos veces.~~ **Resuelto:** el número de pedido se muestra una sola vez (panel verde), la ilustración y los espacios se compactan cuando hay comprobante para que quepa casi todo sin bajar, y un degradado al pie indica que hay más abajo.
 5. En el registro de la app apareció un fotograma de hasta ~24 s al abrir el WebView por primera vez. En el emulador la página llegó a verse en ~6 s, así que puede ser solo el emulador: revisar en un teléfono real.
 6. Las pruebas por ADB se manejaron con el árbol de accesibilidad de Android (`uiautomator dump`), que muestra los botones de la app con nombre; sirve para automatizar más casos.
 

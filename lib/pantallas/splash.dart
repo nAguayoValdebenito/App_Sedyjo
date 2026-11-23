@@ -104,6 +104,12 @@ class _SplashPantallaState extends State<SplashPantalla> with SingleTickerProvid
       widget.alTerminar!();
       return;
     }
+    // Si quedó un pago por confirmar (la app se cerró a mitad del pago), se entra directo a la tienda: ahí se reanuda
+    // y el cliente ve cómo terminó, sin tener que pasar antes por la bienvenida.
+    if (estado.pagoPendiente != null) {
+      entrarALaTienda(context);
+      return;
+    }
     Navigator.of(context).pushReplacement(PageRouteBuilder(
       transitionDuration: dur(context, 500),
       pageBuilder: (_, _, _) => const BienvenidaPantalla(),

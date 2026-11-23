@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:sedyjo_app/app/datos.dart';
 import 'package:sedyjo_app/app/tema.dart';
 import 'package:sedyjo_app/pantallas/pago_resultado.dart';
+import 'package:sedyjo_app/ui/componentes.dart';
+import 'package:sedyjo_app/ui/ilustracion_pago.dart';
 
 Widget app(Widget home) => MaterialApp(theme: construirTema(), home: home);
 
@@ -57,6 +60,8 @@ void main() {
     expect(find.text('El pago no se completó'), findsNothing);
     await esperar(t, 2200);
     expect(find.text('El pago no se completó'), findsOneWidget);
+    expect(find.byType(IlustracionEstado), findsOneWidget, reason: 'el pago que falló sí lleva la tarjeta con la alerta roja');
+    expect(find.byType(IlustracionPago), findsNothing);
     expect(find.textContaining('No te cobramos nada'), findsOneWidget);
     expect(find.text('Intentar de nuevo'), findsOneWidget);
     expect(find.text('Volver al inicio'), findsOneWidget);
@@ -64,14 +69,16 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('pago cancelado: el círculo se vuelve rojo y se avisa que el cliente canceló y que no se cobró nada', (t) async {
+  testWidgets('pago cancelado: el círculo se vuelve gris (no es un error) y se avisa que el cliente canceló y que no se cobró nada', (t) async {
     telefono(t);
     await t.pumpWidget(app(ResultadoPagoPantalla(procesar: () async => const ResultadoPago.cancelado())));
     await esperar(t, 2000);
-    expect(sello(t), Sello.rechazado);
+    expect(sello(t), Sello.cancelado, reason: 'cancelar es decisión del cliente: no lleva el rojo del error');
     expect(find.text('Cancelaste el pago'), findsNothing);
     await esperar(t, 2200);
     expect(find.text('Cancelaste el pago'), findsOneWidget);
+    expect(t.widget<IlustracionPago>(find.byType(IlustracionPago)).tipo, TipoIlustracionPago.cancelado);
+    expect(find.byType(IlustracionEstado), findsNothing, reason: 'sin la tarjeta con el triángulo rojo de alerta');
     expect(find.textContaining('No te cobramos nada'), findsOneWidget);
     expect(find.text('Intentar de nuevo'), findsOneWidget);
     expect(find.text('Volver al inicio'), findsOneWidget);
@@ -80,7 +87,7 @@ void main() {
     await t.pumpWidget(const SizedBox());
   });
 
-  testWidgets('pago sin confirmar: sello gris, no promete que no se cobró y "Revisar de nuevo" llama una vez al callback', (t) async {
+  testWidgets('pago sin confirmar: sello azul con reloj, ilustración de espera, no promete que no se cobró y "Revisar de nuevo" llama una vez al callback', (t) async {
     telefono(t);
     var revisiones = 0;
     await t.pumpWidget(app(ResultadoPagoPantalla(
@@ -92,6 +99,9 @@ void main() {
     expect(find.text('Estamos confirmando tu pago'), findsNothing);
     await esperar(t, 2200);
     expect(find.text('Estamos confirmando tu pago'), findsOneWidget);
+    expect(t.widget<IlustracionPago>(find.byType(IlustracionPago)).tipo, TipoIlustracionPago.confirmando);
+    expect(find.byIcon(LucideIcons.clock), findsOneWidget, reason: 'un reloj: se está esperando, no falló');
+    expect(find.byType(IlustracionEstado), findsNothing, reason: 'sin la tarjeta con el triángulo rojo de alerta');
     expect(find.textContaining('No pagues de nuevo'), findsOneWidget);
     expect(find.textContaining('No te cobramos nada'), findsNothing, reason: 'puede que el banco sí haya cobrado');
     expect(find.text('Volver al inicio'), findsOneWidget);
@@ -132,6 +142,7 @@ void main() {
     )));
     await esperar(t, 4000);
     expect(find.text('Comprobante de pago'), findsOneWidget);
+    expect(find.text('SED-1043'), findsOneWidget, reason: 'el número de pedido aparece una sola vez (panel verde), no repetido en el comprobante');
     expect(find.text('Código de autorización'), findsOneWidget);
     expect(find.text('1213'), findsOneWidget);
     expect(find.text('•••• 6623'), findsOneWidget);
