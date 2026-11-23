@@ -9,14 +9,16 @@ import '../app/tema.dart';
 import '../pago/modelos_pago.dart';
 import 'direccion.dart' show mostrarContacto;
 import '../ui/componentes.dart';
+import '../ui/ilustracion_pago.dart';
 import 'pedidos.dart';
 import 'shell.dart' show BarraInferior;
 
 // `ResultadoPago` vive ahora en los modelos del pago; se reexporta para no tocar a quienes lo importan de aquí.
 export '../pago/modelos_pago.dart' show ResultadoPago, MotivoNoPago, ComprobantePago;
 
-/// Estado del sello circular de arriba.
-enum Sello { procesando, aprobado, rechazado, sinConfirmar }
+/// Estado del sello circular de arriba. El color dice qué pasó: verde, todo bien; rojo, falló; gris, el cliente
+/// canceló (no es un error); azul con un reloj, aún no sabemos cómo terminó.
+enum Sello { procesando, aprobado, rechazado, cancelado, sinConfirmar }
 
 /// Fecha y hora de Chile continental (`dd/mm/aaaa HH:mm`) a partir de un instante cualquiera.
 ///
@@ -40,8 +42,8 @@ String fechaChile(DateTime fecha) {
 
 /// Pantalla del resultado del pago, en tres tiempos:
 /// 1. Solo un círculo que gira mientras se confirma el pago ("Confirmando tu pago…").
-/// 2. El círculo se cierra y se vuelve verde con una marca (aprobado), rojo con una cruz (rechazado o cancelado)
-///    o gris con una «!» (sin confirmar: no se sabe cómo terminó).
+/// 2. El círculo se cierra y se vuelve verde con una marca (aprobado), rojo con una cruz (rechazado), gris con una
+///    cruz (cancelado por el cliente) o azul con un reloj (sin confirmar: no se sabe cómo terminó).
 /// 3. Recién entonces aparece el mensaje completo: ilustración, título, número de pedido y los botones.
 ///
 /// Con [procesar] hace el trabajo real (registrar el pedido, cobrar); con [resultado] muestra uno ya conocido
@@ -99,7 +101,11 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
     final r = _r;
     if (r == null) return Sello.procesando;
     if (r.aprobado) return Sello.aprobado;
-    return r.motivo == MotivoNoPago.sinConfirmar ? Sello.sinConfirmar : Sello.rechazado;
+    return switch (r.motivo) {
+      MotivoNoPago.sinConfirmar => Sello.sinConfirmar,
+      MotivoNoPago.cancelado => Sello.cancelado,
+      _ => Sello.rechazado,
+    };
   }
 
   @override
@@ -150,19 +156,38 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
   Widget _vistaFinal(BuildContext context, ResultadoPago r) {
     return Column(key: const ValueKey('final'), children: [
       Expanded(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: Esp.x6),
-          child: Column(children: r.aprobado ? _aprobado(context, r) : _noPagado(r.motivo)),
-        ),
+        // Un degradado al pie insinúa que hay más abajo: con comprobante el contenido es más alto que la pantalla.
+        child: Stack(children: [
+          SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: Esp.x6),
+            child: Column(children: r.aprobado ? _aprobado(context, r) : _noPagado(r.motivo)),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: Esp.x6,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [C.fondo.withValues(alpha: 0), C.fondo]),
+                ),
+              ),
+            ),
+          ),
+        ]),
       ),
       _botones(context, r),
     ]);
   }
 
-  List<Widget> _aprobado(BuildContext context, ResultadoPago r) => [
-        const SizedBox(height: Esp.x8 + Esp.x6),
-        Revelar(child: const IlustracionEstado('compra-exitosa.webp', ancho: 260)),
-        const SizedBox(height: Esp.x6),
+  List<Widget> _aprobado(BuildContext context, ResultadoPago r) {
+    // Con comprobante hay mucho que mostrar: se achica la ilustración y los espacios para que casi todo quepa sin bajar.
+    final compacto = r.comprobante != null;
+    return [
+        SizedBox(height: compacto ? Esp.x4 : Esp.x8 + Esp.x6),
+        Revelar(child: IlustracionEstado('compra-exitosa.webp', ancho: compacto ? 190 : 260)),
+        SizedBox(height: compacto ? Esp.x4 : Esp.x6),
         Revelar(indice: 1, child: Semantics(liveRegion: true, header: true, child: Text('¡Tu compra está lista!', textAlign: TextAlign.center, style: T.titulo1))),
         const SizedBox(height: Esp.x3),
         Revelar(
@@ -202,11 +227,12 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
         ),
         const SizedBox(height: Esp.x4),
       ];
+  }
 
-  /// Panel con los datos de la transacción que informó el banco.
+  /// Panel con los datos de la transacción que informó el banco. El número de pedido no se repite aquí: ya es el
+  /// protagonista del panel verde de arriba.
   Widget _comprobante(ResultadoPago r, ComprobantePago c) {
     final filas = <(String, String)>[
-      ('Número de pedido', r.numero ?? ''),
       ('Monto', clp(r.total)),
       ('Código de autorización', c.codigoAutorizacion),
       ('Tarjeta', '•••• ${c.tarjetaUltimos4}'),
@@ -244,9 +270,16 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
         ),
       _ => ('El pago no se completó', 'No te cobramos nada y tus productos siguen en el carrito. Puedes intentarlo de nuevo.'),
     };
+    // La ilustración dice lo mismo que el texto: la alerta roja es solo para el pago que falló. Cancelar es decisión
+    // del cliente y confirmar es una espera, así que no llevan el triángulo rojo.
+    final ilustracion = switch (motivo) {
+      MotivoNoPago.cancelado => const IlustracionPago(TipoIlustracionPago.cancelado),
+      MotivoNoPago.sinConfirmar => const IlustracionPago(TipoIlustracionPago.confirmando),
+      _ => const IlustracionEstado('pago-no-completado.webp', ancho: 260),
+    };
     return [
       const SizedBox(height: Esp.x8 + Esp.x6),
-      Revelar(child: const IlustracionEstado('pago-no-completado.webp', ancho: 260)),
+      Revelar(child: ilustracion),
       const SizedBox(height: Esp.x6),
       Revelar(indice: 1, child: Semantics(liveRegion: true, header: true, child: Text(titulo, textAlign: TextAlign.center, style: T.titulo1))),
       const SizedBox(height: Esp.x3),
@@ -314,7 +347,8 @@ class ErrorPagoPantalla extends StatelessWidget {
 }
 
 /// El círculo del resultado: gira mientras se confirma; al resolverse el aro se cierra, el disco se llena
-/// (verde con una marca, o rojo con una cruz) y la marca se dibuja. Con "reducir movimiento" el cambio es directo.
+/// (verde con una marca, rojo con una cruz, gris con una cruz o azul con un reloj) y la marca se dibuja.
+/// Con "reducir movimiento" el cambio es directo.
 class SelloPago extends StatefulWidget {
   const SelloPago(this.sello, {super.key, this.tam = 104});
   final Sello sello;
@@ -364,6 +398,7 @@ class _SelloPagoState extends State<SelloPago> with TickerProviderStateMixin {
       Sello.procesando => 'Confirmando tu pago',
       Sello.aprobado => 'Pago aprobado',
       Sello.rechazado => 'Pago rechazado',
+      Sello.cancelado => 'Pago cancelado',
       Sello.sinConfirmar => 'Pago sin confirmar',
     };
     return Semantics(
@@ -394,7 +429,8 @@ class _PintorSello extends CustomPainter {
   _PintorSello({required this.giro, required this.res, required this.sello, required this.pista, required this.aro})
       : relleno = switch (sello) {
           Sello.rechazado => C.rojo,
-          Sello.sinConfirmar => C.grisMedio,
+          Sello.cancelado => const Color(0xFF5F6B7A), // gris fijo: la marca es blanca y debe contrastar también de noche
+          Sello.sinConfirmar => C.azul,
           _ => C.verde,
         };
   final double giro;
@@ -433,7 +469,7 @@ class _PintorSello extends CustomPainter {
     final crece = Curves.easeOutBack.transform(((res - .30) / .35).clamp(0.0, 1.0));
     if (crece > 0) canvas.drawCircle(c, (r + grosor / 2) * crece, Paint()..color = relleno);
 
-    // 3) Marca (visto bueno, cruz o «!») que se dibuja.
+    // 3) Marca (visto bueno, cruz o manecillas de reloj) que se dibuja.
     final p = Curves.easeOut.transform(((res - .55) / .45).clamp(0.0, 1.0));
     if (p > 0) {
       final w = size.width;
@@ -445,13 +481,12 @@ class _PintorSello extends CustomPainter {
             ..lineTo(w * .44, w * .67)
             ..lineTo(w * .71, w * .37);
         case Sello.sinConfirmar:
-          // La «!»: una raya y, al final del trazo, el punto de abajo (un tramo casi nulo con punta redonda).
+          // Las manecillas de un reloj sobre el disco azul: una espera, no una alarma.
           ruta
-            ..moveTo(w * .50, w * .28)
-            ..lineTo(w * .50, w * .54)
-            ..moveTo(w * .50, w * .70)
-            ..lineTo(w * .50, w * .702);
-        case Sello.procesando || Sello.rechazado:
+            ..moveTo(w * .50, w * .27)
+            ..lineTo(w * .50, w * .50)
+            ..lineTo(w * .67, w * .60);
+        case Sello.procesando || Sello.rechazado || Sello.cancelado:
           ruta
             ..moveTo(w * .36, w * .36)
             ..lineTo(w * .64, w * .64)
