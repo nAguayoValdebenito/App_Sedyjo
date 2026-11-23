@@ -93,14 +93,38 @@ mixin PedidosEstado on ChangeNotifier, CarritoEstado {
     return 'SED-${mayor + 1}';
   }
 
-  /// Convierte el carrito en un pedido (queda primero en la lista, con el estado "Recibido") y vacía el carrito.
-  Pedido registrarPedido({required String correo, required String direccion, String? franja, String? notas, bool retiro = false}) {
+  /// El pago que se inició y aún no se confirma; se guarda para poder retomarlo si la app se cierra.
+  PagoPendiente? pagoPendiente;
+
+  void guardarPagoPendiente(PagoPendiente p) {
+    pagoPendiente = p;
+    notifyListeners();
+  }
+
+  void limpiarPagoPendiente() {
+    pagoPendiente = null;
+    notifyListeners();
+  }
+
+  /// Convierte lo comprado en un pedido (queda primero en la lista, con el estado "Recibido").
+  /// [numero] es el que asignó el servidor; sin él se continúa la numeración local.
+  /// Sin [lineas] el pedido lleva todo el carrito y este se vacía; con [lineas] solo esas
+  /// (producto → cantidad pagada), que se restan del carrito.
+  Pedido registrarPedido({
+    required String correo,
+    required String direccion,
+    String? franja,
+    String? notas,
+    bool retiro = false,
+    String? numero,
+    Map<int, int>? lineas,
+  }) {
     final ahora = DateTime.now();
     final pedido = Pedido(
-      siguienteNumeroPedido,
+      numero ?? siguienteNumeroPedido,
       '${ahora.day} ${_meses[ahora.month - 1]} ${ahora.year}',
       EstadoPedido.recibido,
-      Map.of(carrito),
+      Map.of(lineas ?? carrito),
       direccion,
       correo: correo.trim().toLowerCase(),
       creado: ahora,
@@ -109,7 +133,19 @@ mixin PedidosEstado on ChangeNotifier, CarritoEstado {
       notas: (notas == null || notas.trim().isEmpty) ? null : notas.trim(),
     );
     pedidos.insert(0, pedido);
-    vaciarCarrito();
+    if (lineas == null) {
+      vaciarCarrito();
+    } else {
+      for (final e in lineas.entries) {
+        final queda = (carrito[e.key] ?? 0) - e.value;
+        if (queda <= 0) {
+          carrito.remove(e.key);
+        } else {
+          carrito[e.key] = queda;
+        }
+      }
+      _sincronizar();
+    }
     return pedido;
   }
 

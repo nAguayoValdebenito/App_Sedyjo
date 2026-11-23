@@ -6,42 +6,52 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../pago/modelos_pago.dart';
 import 'direccion.dart' show mostrarContacto;
 import '../ui/componentes.dart';
 import 'pedidos.dart';
 import 'shell.dart' show BarraInferior;
 
-/// Cómo terminó el pago.
-class ResultadoPago {
-  const ResultadoPago.aprobado({required String this.numero, required this.total, required this.correo, this.retiro = false}) : aprobado = true;
-  const ResultadoPago.rechazado()
-      : aprobado = false,
-        numero = null,
-        total = 0,
-        correo = '',
-        retiro = false;
-
-  final bool aprobado;
-  final String? numero;
-  final int total;
-  final String correo;
-  final bool retiro;
-}
+// `ResultadoPago` vive ahora en los modelos del pago; se reexporta para no tocar a quienes lo importan de aquí.
+export '../pago/modelos_pago.dart' show ResultadoPago, MotivoNoPago, ComprobantePago;
 
 /// Estado del sello circular de arriba.
-enum Sello { procesando, aprobado, rechazado }
+enum Sello { procesando, aprobado, rechazado, sinConfirmar }
+
+/// Fecha y hora de Chile continental (`dd/mm/aaaa HH:mm`) a partir de un instante cualquiera.
+///
+/// No hay paquete de zonas horarias en el proyecto (y `toLocal()` dependería de la zona del teléfono o de la
+/// máquina de pruebas), así que se aplica a mano la regla vigente de Chile continental: UTC-4 en invierno y UTC-3
+/// en horario de verano, que empieza el primer domingo desde el 2 de septiembre a las 04:00 UTC y termina el
+/// primer domingo desde el 2 de abril a las 03:00 UTC. Limitación: esa regla rige desde 2023; en fechas anteriores
+/// los cambios de hora pudieron caer en otro día, y Magallanes (UTC-3 todo el año) no está contemplado.
+String fechaChile(DateTime fecha) {
+  final u = fecha.toUtc();
+  DateTime domingoDesdeEl2(int mes, int hora) {
+    final dia2 = DateTime.utc(u.year, mes, 2, hora);
+    return dia2.add(Duration(days: (DateTime.sunday - dia2.weekday) % 7));
+  }
+
+  final verano = !u.isBefore(domingoDesdeEl2(9, 4)) || u.isBefore(domingoDesdeEl2(4, 3));
+  final l = u.subtract(Duration(hours: verano ? 3 : 4));
+  String dos(int n) => n.toString().padLeft(2, '0');
+  return '${dos(l.day)}/${dos(l.month)}/${l.year} ${dos(l.hour)}:${dos(l.minute)}';
+}
 
 /// Pantalla del resultado del pago, en tres tiempos:
 /// 1. Solo un círculo que gira mientras se confirma el pago ("Confirmando tu pago…").
-/// 2. El círculo se cierra y se vuelve verde con una marca (aprobado) o rojo con una cruz (rechazado).
+/// 2. El círculo se cierra y se vuelve verde con una marca (aprobado), rojo con una cruz (rechazado o cancelado)
+///    o gris con una «!» (sin confirmar: no se sabe cómo terminó).
 /// 3. Recién entonces aparece el mensaje completo: ilustración, título, número de pedido y los botones.
 ///
 /// Con [procesar] hace el trabajo real (registrar el pedido, cobrar); con [resultado] muestra uno ya conocido
-/// (también pasa por el círculo, para que la secuencia sea la misma).
+/// (también pasa por el círculo, para que la secuencia sea la misma). [alRevisarDeNuevo] es lo que hace el botón
+/// «Revisar de nuevo» del resultado sin confirmar; sin él, el botón no aparece.
 class ResultadoPagoPantalla extends StatefulWidget {
-  const ResultadoPagoPantalla({super.key, this.procesar, this.resultado}) : assert(procesar != null || resultado != null);
+  const ResultadoPagoPantalla({super.key, this.procesar, this.resultado, this.alRevisarDeNuevo}) : assert(procesar != null || resultado != null);
   final Future<ResultadoPago> Function()? procesar;
   final ResultadoPago? resultado;
+  final VoidCallback? alRevisarDeNuevo;
 
   @override
   State<ResultadoPagoPantalla> createState() => _ResultadoPagoPantallaState();
@@ -85,7 +95,12 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
     super.dispose();
   }
 
-  Sello get _sello => _r == null ? Sello.procesando : (_r!.aprobado ? Sello.aprobado : Sello.rechazado);
+  Sello get _sello {
+    final r = _r;
+    if (r == null) return Sello.procesando;
+    if (r.aprobado) return Sello.aprobado;
+    return r.motivo == MotivoNoPago.sinConfirmar ? Sello.sinConfirmar : Sello.rechazado;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -94,8 +109,9 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
       // Mientras se confirma el pago no se puede salir: evitaría dejar la compra a medias.
       canPop: r != null,
       child: Scaffold(
-        // Si el pago se rechazó, la barra de pestañas sigue a la vista para ir a cualquier parte de la tienda.
-        bottomNavigationBar: (_contenido && r != null && !r.aprobado)
+        // Si el pago no se completó (rechazado o cancelado), la barra de pestañas sigue a la vista para ir a cualquier
+        // parte de la tienda. Sin confirmar no: ahí el cliente debe revisar el pago, no seguir comprando.
+        bottomNavigationBar: (_contenido && r != null && !r.aprobado && r.motivo != MotivoNoPago.sinConfirmar)
             ? BarraInferior(alElegir: (i) {
                 Navigator.of(context).popUntil((x) => x.isFirst);
                 estado.irAPestana(i);
@@ -136,7 +152,7 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
       Expanded(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: Esp.x6),
-          child: Column(children: r.aprobado ? _aprobado(context, r) : _rechazado(context)),
+          child: Column(children: r.aprobado ? _aprobado(context, r) : _noPagado(r.motivo)),
         ),
       ),
       _botones(context, r),
@@ -171,6 +187,10 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
             ),
           ),
         ),
+        if (r.comprobante != null) ...[
+          const SizedBox(height: Esp.x4),
+          Revelar(indice: 4, child: _comprobante(r, r.comprobante!)),
+        ],
         const SizedBox(height: Esp.x4),
         Revelar(
           indice: 4,
@@ -183,18 +203,57 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
         const SizedBox(height: Esp.x4),
       ];
 
-  List<Widget> _rechazado(BuildContext context) => [
-        const SizedBox(height: Esp.x8 + Esp.x6),
-        Revelar(child: const IlustracionEstado('pago-no-completado.webp', ancho: 260)),
-        const SizedBox(height: Esp.x6),
-        Revelar(indice: 1, child: Semantics(liveRegion: true, header: true, child: Text('El pago no se completó', textAlign: TextAlign.center, style: T.titulo1))),
-        const SizedBox(height: Esp.x3),
-        Revelar(
-          indice: 2,
-          child: Text('No te cobramos nada y tus productos siguen en el carrito. Puedes intentarlo de nuevo.', textAlign: TextAlign.center, style: T.cuerpo.copyWith(color: C.grisMedio)),
+  /// Panel con los datos de la transacción que informó el banco.
+  Widget _comprobante(ResultadoPago r, ComprobantePago c) {
+    final filas = <(String, String)>[
+      ('Número de pedido', r.numero ?? ''),
+      ('Monto', clp(r.total)),
+      ('Código de autorización', c.codigoAutorizacion),
+      ('Tarjeta', '•••• ${c.tarjetaUltimos4}'),
+      ('Tipo de pago', c.tipoPago),
+      ('Cuotas', c.cuotas == 0 ? 'Sin cuotas' : '${c.cuotas} cuotas'),
+      if (c.fecha != null) ('Fecha', fechaChile(c.fecha!)),
+    ];
+    return Panel(
+      child: SizedBox(
+        width: double.infinity,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Semantics(header: true, child: Text('Comprobante de pago', style: T.titulo3)),
+          const SizedBox(height: Esp.x3),
+          for (final (etiqueta, valor) in filas)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: Esp.x1),
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(child: Text(etiqueta, style: T.apoyo.copyWith(color: C.grisMedio))),
+                const SizedBox(width: Esp.x3),
+                Flexible(child: Text(valor, textAlign: TextAlign.end, style: T.cuerpoFuerte)),
+              ]),
+            ),
+        ]),
+      ),
+    );
+  }
+
+  /// Contenido de un pago que no quedó aprobado: rechazado, cancelado por el cliente o sin confirmar.
+  List<Widget> _noPagado(MotivoNoPago? motivo) {
+    final (titulo, cuerpo) = switch (motivo) {
+      MotivoNoPago.cancelado => ('Cancelaste el pago', 'No te cobramos nada y tus productos siguen en el carrito. Puedes intentarlo de nuevo.'),
+      MotivoNoPago.sinConfirmar => (
+          'Estamos confirmando tu pago',
+          'No pudimos saber cómo terminó. Si tu banco te cobró, tu pedido aparecerá en Mis pedidos. No pagues de nuevo todavía.'
         ),
-        const SizedBox(height: Esp.x4),
-      ];
+      _ => ('El pago no se completó', 'No te cobramos nada y tus productos siguen en el carrito. Puedes intentarlo de nuevo.'),
+    };
+    return [
+      const SizedBox(height: Esp.x8 + Esp.x6),
+      Revelar(child: const IlustracionEstado('pago-no-completado.webp', ancho: 260)),
+      const SizedBox(height: Esp.x6),
+      Revelar(indice: 1, child: Semantics(liveRegion: true, header: true, child: Text(titulo, textAlign: TextAlign.center, style: T.titulo1))),
+      const SizedBox(height: Esp.x3),
+      Revelar(indice: 2, child: Text(cuerpo, textAlign: TextAlign.center, style: T.cuerpo.copyWith(color: C.grisMedio))),
+      const SizedBox(height: Esp.x4),
+    ];
+  }
 
   Widget _botones(BuildContext context, ResultadoPago r) {
     return Padding(
@@ -212,8 +271,16 @@ class _ResultadoPagoPantallaState extends State<ResultadoPagoPantalla> {
               }),
             ]
           : [
-              Boton('Intentar de nuevo', icono: LucideIcons.refreshCw, onTap: () => Navigator.of(context).maybePop()),
-              const SizedBox(height: Esp.x2),
+              // Sin confirmar no se invita a pagar otra vez: primero se revisa si el cobro llegó a hacerse.
+              if (r.motivo == MotivoNoPago.sinConfirmar) ...[
+                if (widget.alRevisarDeNuevo != null) ...[
+                  Boton('Revisar de nuevo', icono: LucideIcons.refreshCw, onTap: widget.alRevisarDeNuevo),
+                  const SizedBox(height: Esp.x2),
+                ],
+              ] else ...[
+                Boton('Intentar de nuevo', icono: LucideIcons.refreshCw, onTap: () => Navigator.of(context).maybePop()),
+                const SizedBox(height: Esp.x2),
+              ],
               Boton('Volver al inicio', estilo: EstiloBoton.suave, icono: LucideIcons.house, onTap: () {
                 Navigator.of(context).popUntil((x) => x.isFirst);
                 estado.irAPestana(0);
@@ -297,6 +364,7 @@ class _SelloPagoState extends State<SelloPago> with TickerProviderStateMixin {
       Sello.procesando => 'Confirmando tu pago',
       Sello.aprobado => 'Pago aprobado',
       Sello.rechazado => 'Pago rechazado',
+      Sello.sinConfirmar => 'Pago sin confirmar',
     };
     return Semantics(
       label: etiqueta,
@@ -310,10 +378,9 @@ class _SelloPagoState extends State<SelloPago> with TickerProviderStateMixin {
               painter: _PintorSello(
                 giro: _giro.value,
                 res: widget.sello == Sello.procesando ? 0 : _res.value,
-                aprobado: widget.sello == Sello.aprobado,
+                sello: widget.sello,
                 pista: C.borde,
                 aro: C.verde,
-                relleno: widget.sello == Sello.rechazado ? C.rojo : C.verde,
               ),
             ),
           ),
@@ -324,10 +391,15 @@ class _SelloPagoState extends State<SelloPago> with TickerProviderStateMixin {
 }
 
 class _PintorSello extends CustomPainter {
-  _PintorSello({required this.giro, required this.res, required this.aprobado, required this.pista, required this.aro, required this.relleno});
+  _PintorSello({required this.giro, required this.res, required this.sello, required this.pista, required this.aro})
+      : relleno = switch (sello) {
+          Sello.rechazado => C.rojo,
+          Sello.sinConfirmar => C.grisMedio,
+          _ => C.verde,
+        };
   final double giro;
   final double res;
-  final bool aprobado;
+  final Sello sello;
   final Color pista;
   final Color aro;
   final Color relleno;
@@ -361,22 +433,30 @@ class _PintorSello extends CustomPainter {
     final crece = Curves.easeOutBack.transform(((res - .30) / .35).clamp(0.0, 1.0));
     if (crece > 0) canvas.drawCircle(c, (r + grosor / 2) * crece, Paint()..color = relleno);
 
-    // 3) Marca (visto bueno o cruz) que se dibuja.
+    // 3) Marca (visto bueno, cruz o «!») que se dibuja.
     final p = Curves.easeOut.transform(((res - .55) / .45).clamp(0.0, 1.0));
     if (p > 0) {
       final w = size.width;
       final ruta = Path();
-      if (aprobado) {
-        ruta
-          ..moveTo(w * .30, w * .53)
-          ..lineTo(w * .44, w * .67)
-          ..lineTo(w * .71, w * .37);
-      } else {
-        ruta
-          ..moveTo(w * .36, w * .36)
-          ..lineTo(w * .64, w * .64)
-          ..moveTo(w * .64, w * .36)
-          ..lineTo(w * .36, w * .64);
+      switch (sello) {
+        case Sello.aprobado:
+          ruta
+            ..moveTo(w * .30, w * .53)
+            ..lineTo(w * .44, w * .67)
+            ..lineTo(w * .71, w * .37);
+        case Sello.sinConfirmar:
+          // La «!»: una raya y, al final del trazo, el punto de abajo (un tramo casi nulo con punta redonda).
+          ruta
+            ..moveTo(w * .50, w * .28)
+            ..lineTo(w * .50, w * .54)
+            ..moveTo(w * .50, w * .70)
+            ..lineTo(w * .50, w * .702);
+        case Sello.procesando || Sello.rechazado:
+          ruta
+            ..moveTo(w * .36, w * .36)
+            ..lineTo(w * .64, w * .64)
+            ..moveTo(w * .64, w * .36)
+            ..lineTo(w * .36, w * .64);
       }
       final lapiz = Paint()
         ..color = Colors.white
@@ -399,5 +479,5 @@ class _PintorSello extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _PintorSello old) => old.giro != giro || old.res != res || old.aprobado != aprobado || old.relleno != relleno;
+  bool shouldRepaint(covariant _PintorSello old) => old.giro != giro || old.res != res || old.sello != sello || old.relleno != relleno;
 }

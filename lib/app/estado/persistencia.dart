@@ -1,7 +1,7 @@
 part of '../datos.dart';
 
 /// Versión del formato guardado. Súbela cuando cambie la forma de los datos y agrega el paso a [_migrar].
-const int versionDatos = 2;
+const int versionDatos = 3;
 
 /// Guardar y restaurar todo lo que la persona hizo. Cada versión del formato se migra a la siguiente,
 /// así una actualización de la app nunca descarta ni rompe lo guardado.
@@ -27,6 +27,7 @@ mixin PersistenciaEstado on ChangeNotifier, CarritoEstado, PreferenciasEstado, B
         'direcciones': [for (final d in direcciones) d.toJson()],
         'pedidos': [for (final p in pedidos) p.toJson()],
         'silenciadoHasta': relampagoSilenciadoHoy ? _hoy : null,
+        'pagoPendiente': pagoPendiente?.toJson(),
       };
 
   static String get _hoy {
@@ -36,11 +37,15 @@ mixin PersistenciaEstado on ChangeNotifier, CarritoEstado, PreferenciasEstado, B
 
   /// Lleva lo guardado por versiones anteriores al formato actual.
   /// v1 (sin número de versión) ya tenía los mismos campos, así que solo se marca como v2.
+  /// v3 agrega el pago pendiente; lo anterior no lo tiene y queda sin pago pendiente, así que solo se marca como v3.
   static Map<String, dynamic> migrar(Map<String, dynamic> j) {
     var datos = Map<String, dynamic>.of(j);
     var v = (datos['v'] as int?) ?? 1;
     if (v < 2) {
       datos['v'] = v = 2;
+    }
+    if (v < 3) {
+      datos['v'] = v = 3;
     }
     // Un formato más nuevo que esta app (por ejemplo, tras volver a una versión anterior) se lee con lo que se entienda.
     return datos;
@@ -87,5 +92,15 @@ mixin PersistenciaEstado on ChangeNotifier, CarritoEstado, PreferenciasEstado, B
         ..addAll((j['pedidos'] as List).map((e) => Pedido.desdeJson(e as Map<String, dynamic>)));
     }
     relampagoSilenciadoHoy = j['silenciadoHasta'] == _hoy;
+    // Un pago pendiente dañado no debe impedir restaurar el resto: se descarta.
+    pagoPendiente = null;
+    final pp = j['pagoPendiente'];
+    if (pp is Map) {
+      try {
+        pagoPendiente = PagoPendiente.desdeJson(Map<String, dynamic>.from(pp));
+      } catch (_) {
+        pagoPendiente = null;
+      }
+    }
   }
 }

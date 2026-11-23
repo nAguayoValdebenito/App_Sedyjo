@@ -3,10 +3,11 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../app/datos.dart';
 import '../app/tema.dart';
+import '../pago/modelos_pago.dart';
+import '../pago/pago.dart';
 import '../ui/componentes.dart';
 import 'auth.dart';
 import 'direccion.dart';
-import 'pago_resultado.dart';
 import 'tienda.dart';
 
 class CheckoutPantalla extends StatefulWidget {
@@ -84,24 +85,28 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
     _subir(); // si falta algo, el resumen de arriba queda a la vista
   }
 
-  Future<void> _pagar({bool forzarRechazo = false}) async {
+  /// Arma la solicitud con lo que hay en el carrito y los datos del cliente, y deja el pago en manos del flujo:
+  /// el pedido solo se crea si la pasarela lo aprueba.
+  Future<void> _pagar() async {
+    if (_pagando) return;
     setState(() => _pagando = true);
-    final total = estado.subtotal;
-    final correo = _correo.text.trim();
     final retiro = _retiro;
-    final direccion = retiro ? tienda.direccionCompleta : '${_dir!.calle}, ${_dir!.comuna}';
-    final franja = retiro ? tienda.plazo : _franjas[_franja];
-    final notas = _notas.text;
-    // La pantalla de resultado confirma el pago con un círculo que gira; solo si se aprueba se crea el pedido.
-    await Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => ResultadoPagoPantalla(procesar: () async {
-        await Future<void>.delayed(const Duration(milliseconds: 600));
-        if (forzarRechazo || estado.simulacionPago == SimulacionPago.rechazado) return const ResultadoPago.rechazado();
-        final pedido = estado.registrarPedido(correo: correo, direccion: direccion, franja: franja, notas: notas, retiro: retiro);
-        return ResultadoPago.aprobado(numero: pedido.numero, total: total, correo: correo, retiro: retiro);
-      }),
-    ));
-    if (mounted) setState(() => _pagando = false);
+    final solicitud = SolicitudPago(
+      lineas: Map.of(estado.carrito),
+      totalVisto: estado.subtotal,
+      nombre: _nombre.text.trim(),
+      correo: _correo.text.trim(),
+      telefono: _telefono.text.trim(),
+      retiro: retiro,
+      direccion: retiro ? tienda.direccionCompleta : '${_dir!.calle}, ${_dir!.comuna}',
+      franja: retiro ? tienda.plazo : _franjas[_franja],
+      notas: _notas.text,
+    );
+    try {
+      await flujoPago.pagar(context, solicitud);
+    } finally {
+      if (mounted) setState(() => _pagando = false);
+    }
   }
 
   @override
@@ -332,16 +337,6 @@ class _CheckoutPantallaState extends State<CheckoutPantalla> {
         const SizedBox(width: Esp.x2),
         Expanded(child: Text('Pago protegido. Podrás volver si algo falla.', style: T.apoyo)),
       ]),
-      // TEMPORAL: botón solo para probar la pantalla de pago rechazado. Se quita cuando termine la revisión.
-      const SizedBox(height: Esp.x6),
-      Panel(
-        borde: C.bordeControl,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Solo para pruebas', style: T.etiqueta.copyWith(color: C.grisMedio)),
-          const SizedBox(height: Esp.x2),
-          Boton('Probar pago rechazado', icono: LucideIcons.circleX, estilo: EstiloBoton.peligro, alto: 52, onTap: _pagando ? null : () => _pagar(forzarRechazo: true)),
-        ]),
-      ),
     ];
   }
 }
