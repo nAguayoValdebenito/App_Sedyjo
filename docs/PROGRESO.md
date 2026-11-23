@@ -50,8 +50,10 @@
 - Avisos ("Deshacer", "Agregaste…") más cerca del borde inferior; en la ficha la barra de compra pasó al Scaffold para que el aviso flote sobre ella.
 - Pruebas de imagen (golden) en `test/goldens/`: `flutter test --update-goldens test/goldens_test.dart` para aceptar cambios.
 
-## Pago con Webpay: verificación pendiente
-Hecho en esta máquina (Windows, sin emulador ni dispositivo): el servidor de prueba `tools/webpay_falso.py` (solo desarrollo, nunca desplegar) cumple el contrato de `docs/backend-webpay.md` §4 y el cliente real `PasarelaWebpay` se probó contra él con red real (aprobado con comprobante, rechazado, cancelado, `precios_cambiaron`, sin conexión). **Falta probar la interfaz en un emulador o dispositivo.**
+## Pago con Webpay: verificación en emulador (23 nov 2026)
+Hecho: el servidor de prueba `tools/webpay_falso.py` (solo desarrollo, nunca desplegar) cumple el contrato de `docs/backend-webpay.md` §4 y el cliente real `PasarelaWebpay` se probó contra él con red real (aprobado con comprobante, rechazado, cancelado, `precios_cambiaron`, sin conexión). **El recorrido completo se probó a mano en un emulador Android 15 (API 35, «Google APIs»), contra ese servidor de prueba: los 8 casos de abajo se comportan como se diseñó.** Sigue pendiente probar en un teléfono real, el 3D Secure real y iOS.
+
+Nota sobre el emulador: en esta máquina el emulador de Android 17 (API 37, emulador 37.2.12) se cae solo al minuto o dos (`Segmentation fault`; el propio emulador avisa «Guest Angle is still unstable for API > 35»), incluso con otro modo de dibujo o con el driver de NVIDIA actualizado. El de Android 15 creado para esto (`Sedyjo_API_35`, Pixel 8, 4 GB de RAM) aguantó toda la sesión de pruebas.
 
 Comandos (dos terminales; el emulador de Android ve el equipo anfitrión como `10.0.2.2`):
 ```
@@ -61,32 +63,40 @@ flutter run --dart-define=PAGO_MODO=webpay --dart-define=API_URL=http://10.0.2.2
 El servidor escucha solo en `127.0.0.1` por defecto (el `10.0.2.2` del emulador llega a ese loopback del anfitrión). Con un teléfono físico: `python tools/webpay_falso.py --host 0.0.0.0 --puerto 8080` y `API_URL=http://<IP del equipo>:8080/api/v1` (queda expuesto a la red local: solo en una red de confianza).
 El `http` solo funciona en debug (`android/app/src/debug/AndroidManifest.xml` permite tráfico sin cifrar y el WebView solo acepta `http` en debug); profile y release lo bloquean.
 
-Casos manuales, todos **pendientes**:
-- [ ] 1. Comprar y «Aprobar» → círculo verde, pedido `SED-9000X`, comprobante visible, carrito vacío.
-- [ ] 2. «Rechazar» → «El pago no se completó», carrito intacto.
-- [ ] 3. «Cancelar» → «Cancelaste el pago», carrito intacto.
-- [ ] 4. Cerrar con «✕» → «¿Salir del pago?»; «Salir» → resultado coherente con el estado del servidor.
-- [ ] 5. Matar la app en la página de pago y reabrirla → se reanuda sola («Estamos confirmando tu pago» o el resultado final), sin duplicar pedidos.
-- [ ] 6. Apagar el servidor antes de tocar «Pagar» → «No pudimos conectar… no se cobró nada» y el botón vuelve a estar disponible.
-- [ ] 7. Con `--precios-cambian` → diálogo «Cambió el total»; «Continuar» abre Webpay.
-- [ ] 8. Doble toque rápido en «Pagar» → un solo pedido en el servidor (revisar la consola del servidor de prueba).
+Casos manuales (emulador Android 15, servidor de prueba local):
+- [x] 1. Comprar y «Aprobar» → círculo verde, pedido `SED-9000X`, comprobante visible, carrito vacío. El pedido aparece en «Seguir mi pedido».
+- [x] 2. «Rechazar» → «El pago no se completó», «No te cobramos nada», carrito intacto, barra de pestañas visible; «Intentar de nuevo» vuelve al paso de pago.
+- [x] 3. «Cancelar» → «Cancelaste el pago», carrito intacto.
+- [x] 4. Cerrar con «✕» → «¿Salir del pago?»; «Seguir pagando» vuelve a la página; «Salir» → consulta al servidor y, como el pedido sigue pendiente, a los ~16 s muestra «Estamos confirmando tu pago… No pagues de nuevo todavía» (ver hallazgo 1). Al cancelar el pedido en el servidor, «Revisar de nuevo» muestra «Cancelaste el pago».
+- [x] 5. Matar la app en la página de pago (`am force-stop`) y reabrirla → al entrar a la tienda se reanuda sola («Confirmando tu pago…» y luego «Estamos confirmando tu pago»); tras aprobar el pago en el servidor, «Revisar de nuevo» muestra la compra aprobada y registra el pedido, sin duplicarlo.
+- [x] 6. Servidor apagado antes de tocar «Pagar» → «No pudimos iniciar el pago. No pudimos conectar. Revisa tu conexión: no se cobró nada.» y el botón «Pagar» vuelve a estar disponible.
+- [x] 7. Con `--precios-cambian` → «Cambió el total» con el total nuevo ($743 + $500 = $1.243); «Continuar» abre Webpay con ese total y, al aprobar, el resultado dice «Pagaste $1.243». (La rama «Volver al carrito» no se probó.)
+- [x] 8. Doble toque rápido en «Pagar» (tres toques seguidos) → se crea un solo pedido: el siguiente pedido es el correlativo (`SED-90006` tras `SED-90005`). El servidor de prueba no deja registro de las peticiones, así que se comprobó por la numeración.
 
-Comprobaciones del WebView en dispositivo real, también **pendientes**:
-- [ ] El `302` a `urlFin` llega a `onNavigationRequest` y se intercepta, en Android y en iOS.
-- [ ] El `POST` con cuerpo (`token_ws`) a la página de pago funciona en ambas plataformas.
-- [ ] «Reintentar» vuelve a hacer el `POST` (no un `GET` sin cuerpo).
+Comprobaciones del WebView:
+- [x] (Android) El `302` a `urlFin` llega a `onNavigationRequest` y se intercepta: la app sale del WebView sola y consulta el estado. **iOS: pendiente.**
+- [x] (Android) El `POST` con cuerpo (`token_ws`) a la página de pago funciona: la página mostró el pedido y el total del servidor. **iOS: pendiente.**
+- [ ] «Reintentar» vuelve a hacer el `POST` (no un `GET` sin cuerpo). No se probó.
 - [ ] Panel «No pudimos cargar Webpay»: si falla antes de que cargue ninguna página (p. ej. sin red al abrir), dice «No se te cobró nada. Revisa tu conexión…»; si falla después de que alguna página terminó de cargar (cortar la red ya dentro del formulario), dice «Si ya confirmaste el pago en tu banco, al cerrar revisaremos cómo quedó. Si no, no se te cobró nada.»
 - [ ] Los iframes de 3D Secure no los bloquea el filtro de esquemas (`about:srcdoc`, `blob:`, `data:`).
 - [ ] iOS no se puede probar en Windows: probar en un Mac con el backend real por `https` (el servidor de prueba es `http`) y antes de enviar a la App Store.
+
+Hallazgos de la prueba en emulador (ninguno bloquea; quedan para revisar):
+1. **Salir de Webpay sin pagar** deja al cliente en «Estamos confirmando tu pago… No pagues de nuevo todavía» hasta que el backend marque ese pedido como expirado (o cancelado). Ya está descrito en `docs/backend-webpay.md`: el backend debe expirar rápido los pagos abandonados, o quien se arrepiente no puede reintentar.
+2. La pantalla «Estamos confirmando tu pago» usa la imagen de tarjeta con triángulo rojo de alerta, que parece decir «falló» cuando el pago pudo haberse cobrado. Conviene una imagen neutra.
+3. Tras matar la app, al reabrirla aparece primero la pantalla de bienvenida; la reanudación del pago empieza recién al entrar a la tienda con «Seguir comprando».
+4. En el resultado aprobado, el comprobante queda parcialmente tapado por los botones (hay que bajar para verlo completo) y el número de pedido aparece dos veces (panel verde y comprobante).
+5. En el registro de la app apareció un fotograma de hasta ~24 s al abrir el WebView por primera vez. En el emulador la página llegó a verse en ~6 s, así que puede ser solo el emulador: revisar en un teléfono real.
+6. Las pruebas por ADB se manejaron con el árbol de accesibilidad de Android (`uiautomator dump`), que muestra los botones de la app con nombre; sirve para automatizar más casos.
 
 ## Pago con Webpay en la app (16-18 nov 2026): resumen
 - **Qué se hizo:** el pago ya no es solo una maqueta. La app tiene la integración con Webpay Plus a través de un backend (que todavía no existe) en `lib/pago/`: configuración por plataforma (`configuracion_pago.dart`), pasarelas simulada, no disponible y Webpay (`pasarela_pago.dart`, `pasarela_webpay.dart`), reglas de navegación del WebView (`navegacion_webpay.dart`), el recorrido completo (`flujo_pago.dart`) y su punto de entrada (`pago.dart`). Pantalla del WebView en `lib/pantallas/webpay.dart`; checkout, resultado del pago (aprobado, rechazado, cancelado, sin confirmar, con comprobante) y `Shell` (reanuda un pago pendiente al abrir la app) conectados a ese flujo; el pago pendiente se guarda en el teléfono (`lib/app/estado`). Paquetes nuevos: `webview_flutter` y `http`.
 - **Cómo se usa:** `PAGO_MODO` (`simulado` por defecto o `webpay`) y `API_URL` por `--dart-define`. Web: siempre simulado; móvil en release: siempre Webpay; debug: lo pedido. La app no lleva el código de comercio ni la llave de Transbank; pasar a producción es cambiar 3 variables en el backend, sin recompilar la app. Detalle en `docs/integraciones.md` («Pago con Webpay») y comandos en `README.md`.
 - **Para el backend:** `docs/backend-webpay.md` es el contrato (endpoints, cabeceras `Idempotency-Key` y `X-Token-Pago`, estados, `precios_cambiaron` con `total`, `urlFin`). Diseño y plan: `docs/superpowers/specs/` y `docs/superpowers/plans/` (`2026-11-16-pago-webpay-app*`). Servidor de prueba: `tools/webpay_falso.py` (solo desarrollo).
 - **Pruebas:** `flutter test --concurrency=1` → 344 pasan (suite completa; las de pago están en `test/pago_*_test.dart`). `flutter analyze` → 0 errores y 0 avisos (45 `info`: la deprecación de `package:flutter/material.dart` en todos los archivos y un `print` en `test/soporte_pantallas.dart`). `flutter build web --release --no-web-resources-cdn` compila.
-- **Sin verificar en esta máquina:** `flutter build apk --debug` falla antes de compilar por un problema del entorno (el JDK 25 de Android Studio no logra abrir una conexión local: «Unable to establish loopback connection»; ocurre incluso con un programa Java mínimo). El plugin de WebView pide `minSdk` 24 y `flutter.minSdkVersion` ya vale 24, así que no hizo falta cambiarlo. Hay que repetir el build en otra máquina o con otro JDK.
+- **Compilación de Android:** `flutter run` compila e instala la app (`assembleDebug`) y se probó en un emulador Android 15 (ver «Pago con Webpay: verificación en emulador»). Dentro del entorno de la herramienta de IA Gradle falla con «Unable to establish loopback connection» (incluso con un programa Java mínimo); desde una terminal normal funciona. Hizo falta subir el plugin de Android a 9.1.1, el mínimo que exige Flutter 3.50 (`android/settings.gradle.kts`). El plugin de WebView pide `minSdk` 24 y `flutter.minSdkVersion` ya vale 24.
 - **Pendiente:**
-  - Lista manual de casos en emulador/dispositivo (sección anterior, «Pago con Webpay: verificación pendiente»).
+  - Probar el pago en un teléfono real y los casos del WebView que faltan (sección anterior: «Reintentar», panel «No pudimos cargar Webpay», 3D Secure).
   - Probar en iOS, que exige un Mac, con el backend real por `https`.
   - Construir el backend según `docs/backend-webpay.md`.
   - Validación de Transbank para pasar a producción (código de comercio y llave reales).
